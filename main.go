@@ -1,6 +1,7 @@
 package main
 
 import (
+	"html/template"
 	"log"
 	"seedance-client/handlers"
 	"seedance-client/models"
@@ -17,10 +18,12 @@ func main() {
 
 	r := gin.Default()
 
-	// Static files
-	r.Static("/static", "./static")
+	// Load embedded templates
+	tmpl := template.Must(template.New("").ParseFS(templatesFS, "templates/*.html"))
+	r.SetHTMLTemplate(tmpl)
+
+	// Static files - uploads still need to be served from disk
 	r.Static("/uploads", "./uploads")
-	r.LoadHTMLGlob("templates/*")
 
 	// Middleware to load API key from cookie
 	r.Use(handlers.LoadAPIKeyFromCookie())
