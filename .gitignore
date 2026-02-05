@@ -1,0 +1,44 @@
+# Binaries
+seedance-client
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Database
+*.db
+*.db-journal
+*.sqlite
+
+# Uploaded files
+uploads/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Go
+*.test
+*.out
+coverage.out
+vendor/
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
