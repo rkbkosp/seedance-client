@@ -114,16 +114,41 @@
                     <source src="{{ .VideoURL }}" type="video/mp4">
                     Your browser does not support the video tag.
                 </video>
-                <!-- Floating Download Button -->
-                <a href="{{ .VideoURL }}" download
-                    class="absolute bottom-4 right-4 bg-md-sys-color-primary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-primary/90 transition"
-                    title="Download">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
-                        fill="currentColor">
-                        <path
-                            d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
-                    </svg>
-                </a>
+                <!-- Floating Action Buttons -->
+                <div class="absolute bottom-4 right-4 flex gap-2">
+                    {{ if .LastFrameURL }}
+                    <!-- Use Last Frame as First Frame for New Storyboard -->
+                    <button type="button" onclick="useAsFirstFrame('{{ .LastFrameURL }}')"
+                        class="bg-md-sys-color-tertiary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-tertiary/90 transition"
+                        title="Use last frame as first frame for new storyboard">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                            fill="currentColor">
+                            <path
+                                d="M440-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h160v80H280q-50 0-85 35t-35 85q0 50 35 85t85 35h160v80ZM320-440v-80h320v80H320Zm200 160v-80h160q50 0 85-35t35-85q0-50-35-85t-85-35H520v-80h160q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H520Z" />
+                        </svg>
+                    </button>
+                    <!-- Download Last Frame -->
+                    <a href="{{ .LastFrameURL }}" download
+                        class="bg-md-sys-color-secondary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-secondary/90 transition"
+                        title="Download last frame">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                            fill="currentColor">
+                            <path
+                                d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z" />
+                        </svg>
+                    </a>
+                    {{ end }}
+                    <!-- Download Video -->
+                    <a href="{{ .VideoURL }}" download
+                        class="bg-md-sys-color-primary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-primary/90 transition"
+                        title="Download video">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                            fill="currentColor">
+                            <path
+                                d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
+                        </svg>
+                    </a>
+                </div>
                 {{ else if eq .Status "Running" }}
                 <div class="text-white flex flex-col items-center">
                     <div
@@ -366,6 +391,46 @@
         document.getElementById('edit-duration').value = duration.toString();
 
         dialog.showModal();
+    }
+
+    // Use last frame URL as first frame for new storyboard
+    async function useAsFirstFrame(imageUrl) {
+        try {
+            // Fetch the image
+            const response = await fetch(imageUrl);
+            const blob = await response.blob();
+
+            // Create a File object from the blob
+            const filename = 'last_frame_' + Date.now() + '.png';
+            const file = new File([blob], filename, { type: blob.type || 'image/png' });
+
+            // Set the file on the first frame input
+            const input = document.getElementById('input-first-frame');
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            input.files = dataTransfer.files;
+
+            // Show preview
+            const dropZone = document.getElementById('drop-first-frame');
+            const placeholder = dropZone.querySelector('.upload-placeholder');
+            const preview = dropZone.querySelector('.preview-img');
+
+            preview.src = imageUrl;
+            preview.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+
+            // Scroll to the new storyboard form
+            document.querySelector('.mt-16').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            // Flash effect to indicate success
+            dropZone.classList.add('ring-4', 'ring-md-sys-color-primary');
+            setTimeout(() => {
+                dropZone.classList.remove('ring-4', 'ring-md-sys-color-primary');
+            }, 1500);
+        } catch (err) {
+            console.error('Failed to set first frame:', err);
+            alert('Failed to load the last frame image');
+        }
     }
 
     // Drag and Drop functionality for image upload
