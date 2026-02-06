@@ -37,14 +37,19 @@ type Format struct {
 }
 
 type Asset struct {
-	ID       string `xml:"id,attr"`
-	Name     string `xml:"name,attr"`
-	Src      string `xml:"src,attr"`
-	Start    string `xml:"start,attr"`
-	Duration string `xml:"duration,attr"`
-	HasVideo int    `xml:"hasVideo,attr"`
-	HasAudio int    `xml:"hasAudio,attr"`
-	Format   string `xml:"format,attr"`
+	ID       string   `xml:"id,attr"`
+	Name     string   `xml:"name,attr"`
+	Start    string   `xml:"start,attr"`
+	Duration string   `xml:"duration,attr"`
+	HasVideo int      `xml:"hasVideo,attr"`
+	HasAudio int      `xml:"hasAudio,attr"`
+	Format   string   `xml:"format,attr"`
+	MediaRep MediaRep `xml:"media-rep"`
+}
+
+type MediaRep struct {
+	Kind string `xml:"kind,attr"`
+	Src  string `xml:"src,attr"`
 }
 
 type Library struct {
@@ -62,20 +67,24 @@ type Project struct {
 }
 
 type Sequence struct {
-	Format string `xml:"format,attr"`
-	Spine  Spine  `xml:"spine"`
+	Format   string `xml:"format,attr"`
+	Duration string `xml:"duration,attr"`
+	TcStart  string `xml:"tcStart,attr,omitempty"`
+	TcFormat string `xml:"tcFormat,attr,omitempty"`
+	Spine    Spine  `xml:"spine"`
 }
 
 type Spine struct {
-	Clips []Clip `xml:"clip"`
+	AssetClips []AssetClip `xml:"asset-clip"`
 }
 
-type Clip struct {
+type AssetClip struct {
 	Name     string `xml:"name,attr"`
 	Offset   string `xml:"offset,attr"`
 	Duration string `xml:"duration,attr"`
-	Start    string `xml:"start,attr"`
+	Start    string `xml:"start,attr,omitempty"`
 	Ref      string `xml:"ref,attr"`
+	Format   string `xml:"format,attr,omitempty"`
 }
 
 // ExportData holds information about files to be included in the export
@@ -88,7 +97,7 @@ type ExportData struct {
 // sanitizeFilename removes special characters and limits length for filenames
 func sanitizeFilename(s string) string {
 	// Replace non-alphanumeric characters (except spaces) with underscores
-	reg := regexp.MustCompile(`[^a-zA-Z0-9\s\u4e00-\u9fff]`)
+	reg := regexp.MustCompile(`[^a-zA-Z0-9\s\p{Han}]`)
 	s = reg.ReplaceAllString(s, "")
 	// Replace spaces with underscores
 	s = strings.ReplaceAll(s, " ", "_")
@@ -117,7 +126,7 @@ func GenerateFCPXML(projectName string, exports []ExportData, width, height int,
 
 	// Create assets and clips
 	var assets []Asset
-	var clips []Clip
+	var assetClips []AssetClip
 	var offsetSeconds int
 
 	for i, exp := range exports {
@@ -128,24 +137,27 @@ func GenerateFCPXML(projectName string, exports []ExportData, width, height int,
 		asset := Asset{
 			ID:       assetID,
 			Name:     clipName,
-			Src:      "./" + exp.Filename,
 			Start:    "0s",
 			Duration: fmt.Sprintf("%ds", exp.Duration),
 			HasVideo: 1,
 			HasAudio: 1,
 			Format:   "r0",
+			MediaRep: MediaRep{
+				Kind: "original-media",
+				Src:  "./" + exp.Filename,
+			},
 		}
 		assets = append(assets, asset)
 
-		// Clip
-		clip := Clip{
+		// AssetClip
+		assetClip := AssetClip{
 			Name:     clipName,
 			Offset:   fmt.Sprintf("%ds", offsetSeconds),
 			Duration: fmt.Sprintf("%ds", exp.Duration),
-			Start:    "0s",
 			Ref:      assetID,
+			Format:   "r0",
 		}
-		clips = append(clips, clip)
+		assetClips = append(assetClips, assetClip)
 
 		offsetSeconds += exp.Duration
 	}
@@ -162,9 +174,12 @@ func GenerateFCPXML(projectName string, exports []ExportData, width, height int,
 				Project: Project{
 					Name: projectName,
 					Sequence: Sequence{
-						Format: "r0",
+						Format:   "r0",
+						Duration: fmt.Sprintf("%ds", offsetSeconds),
+						TcStart:  "0s",
+						TcFormat: "NDF",
 						Spine: Spine{
-							Clips: clips,
+							AssetClips: assetClips,
 						},
 					},
 				},
