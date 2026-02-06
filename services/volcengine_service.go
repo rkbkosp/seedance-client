@@ -80,6 +80,7 @@ func (s *VolcEngineService) CreateVideoTask(modelID string, prompt string, first
 	}
 
 	// Handle Service Tier
+	// Only set ServiceTier when explicitly "flex", otherwise let API use default behavior
 	if serviceTier == "flex" {
 		req.ServiceTier = volcengine.String("flex")
 		// Use provided expiresAfter or default to 86400 (24h)
@@ -88,9 +89,8 @@ func (s *VolcEngineService) CreateVideoTask(modelID string, prompt string, first
 		} else {
 			req.ExecutionExpiresAfter = volcengine.Int64(86400)
 		}
-	} else if serviceTier == "standard" {
-		req.ServiceTier = volcengine.String("standard")
 	}
+	// When serviceTier is "standard" or empty, do NOT set ServiceTier field
 
 	// Helper for 1.5 Pro audio generation if needed, but defaults are usually fine.
 	// Documentation says 'Seedance 1.5 pro' supports GenerateAudio.

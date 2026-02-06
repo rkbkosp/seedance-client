@@ -449,7 +449,7 @@
     // State management for polling
     const activeTasks = new Set([
         {{ range .Project.Storyboards }}
-    {{ if or (eq.Status "Running") (eq.Status "Queued") }} {{ .ID }}, {{ end }}
+    {{ if or (eq .Status "Running") (eq .Status "Queued") }} {{ .ID }}, {{ end }}
     {{ end }}
     ]);
     let pollInterval = null;
@@ -553,7 +553,7 @@
         } else if (status === 'failed') {
             col.innerHTML = UI.failedConfig(id);
             // Re-attach listener to new form
-            const newForm = col.querySelector ('.generate-form');
+            const newForm = col.querySelector('.generate-form');
             if (newForm) attachSubmitListener(newForm);
         } else if (status === 'running' || status === 'queued') {
             if (!col.innerHTML.includes('animate-spin')) {
@@ -593,7 +593,7 @@
                     }
                 }
             } catch (err) {
-                console.error ('Poll failed for', id, err);
+                console.error('Poll failed for', id, err);
             }
         });
 
@@ -619,7 +619,7 @@
     function attachSubmitListener(form) {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const btn = form.querySelector ('button');
+            const btn = form.querySelector('button');
             const originalContent = btn.innerHTML;
             const id = parseInt(form.dataset.id);
 
@@ -657,7 +657,7 @@
                     btn.innerHTML = originalContent;
                 }
             } catch (err) {
-                console.error (err);
+                console.error(err);
                 alert('Network error');
                 btn.disabled = false;
                 btn.innerHTML = originalContent;
@@ -685,7 +685,7 @@
         // Actually we need to select precise elements.
         // New Form: select[name="model_id"] inside .space-y-8
         // But simpler:
-        const newModelSelect = document.querySelector ('form[action*="/storyboards"] select[name="model_id"]');
+        const newModelSelect = document.querySelector('form[action*="/storyboards"] select[name="model_id"]');
         const newAudioCheck = document.getElementById('new-generate-audio');
         if (newModelSelect && newAudioCheck) {
             newModelSelect.addEventListener('change', () => toggleAudioCheckbox(newModelSelect, newAudioCheck));
@@ -750,17 +750,17 @@
             input.files = dataTransfer.files;
 
             const dropZone = document.getElementById('drop-first-frame');
-            const placeholder = dropZone.querySelector ('.upload-placeholder');
-            const preview = dropZone.querySelector ('.preview-img');
+            const placeholder = dropZone.querySelector('.upload-placeholder');
+            const preview = dropZone.querySelector('.preview-img');
             preview.src = imageUrl;
             preview.classList.remove('hidden');
             placeholder.classList.add('hidden');
-            document.querySelector ('.mt-16').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            document.querySelector('.mt-16').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
             dropZone.classList.add('ring-4', 'ring-md-sys-color-primary');
             setTimeout(() => dropZone.classList.remove('ring-4', 'ring-md-sys-color-primary'), 1500);
         } catch (err) {
-            console.error ('Failed to set first frame:', err);
+            console.error('Failed to set first frame:', err);
             alert('Failed to load the last frame image');
         }
     }
@@ -770,8 +770,8 @@
         const input = document.getElementById(inputId);
         if (!dropZone || !input) return;
 
-        const placeholder = dropZone.querySelector ('.upload-placeholder');
-        const preview = dropZone.querySelector ('.preview-img');
+        const placeholder = dropZone.querySelector('.upload-placeholder');
+        const preview = dropZone.querySelector('.preview-img');
 
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); });
