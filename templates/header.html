@@ -1,145 +1,46 @@
 {{ define "header" }}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="business">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Seedance Manager</title>
-    <!-- Google Fonts: Roboto & Google Sans (using Open Sans as proxy for 'Expressive') -->
-    <link
-        href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Open+Sans:wght@400;600&display=swap"
-        rel="stylesheet">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Material Symbols Icons -->
     <link
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
         rel="stylesheet">
+    <!-- Tailwind CSS + DaisyUI -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['"Open Sans"', 'Roboto', 'sans-serif'],
-                        mono: ['monospace'],
-                    },
-                    colors: {
-                        // MD3 Baseline Purple/Violet Theme
-                        'md-sys-color-primary': '#6750A4',
-                        'md-sys-color-on-primary': '#FFFFFF',
-                        'md-sys-color-primary-container': '#EADDFF',
-                        'md-sys-color-on-primary-container': '#21005D',
-
-                        'md-sys-color-secondary': '#625B71',
-                        'md-sys-color-secondary-container': '#E8DEF8',
-                        'md-sys-color-on-secondary-container': '#1D192B',
-
-                        'md-sys-color-tertiary': '#7D5260',
-                        'md-sys-color-tertiary-container': '#FFD8E4',
-                        'md-sys-color-on-tertiary-container': '#31111D',
-
-                        'md-sys-color-error': '#B3261E',
-                        'md-sys-color-error-container': '#F9DEDC',
-
-                        'md-sys-color-background': '#FFFBFE',
-                        'md-sys-color-on-background': '#1C1B1F',
-
-                        'md-sys-color-surface': '#FFFBFE',
-                        'md-sys-color-on-surface': '#1C1B1F',
-                        'md-sys-color-surface-variant': '#E7E0EC',
-                        'md-sys-color-on-surface-variant': '#49454F',
-                        'md-sys-color-outline': '#79747E',
-                    },
-                    borderRadius: {
-                        'md3-sm': '8px',
-                        'md3-md': '12px',
-                        'md3-lg': '16px',
-                        'md3-xl': '28px',
-                    }
-                }
-            }
-        }
-    </script>
     <style>
-        /* MD3 Reset & Utilities */
         body {
-            font-family: 'Open Sans', 'Roboto', sans-serif;
+            font-family: 'Inter', sans-serif;
         }
 
-        .md3-card {
-            border-radius: 12px;
-            background-color: var(--md-sys-color-surface, #FFFBFE);
-            /* Elevation 1 */
-            box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15);
+        /* Override DaisyUI defaults for compact design */
+        .card {
+            border-radius: 0.375rem;
         }
 
-        .md3-card:hover {
-            /* Elevation 2 */
-            box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15);
+        .btn {
+            border-radius: 0.375rem;
         }
 
-        .md3-btn-filled {
-            background-color: #6750A4;
-            color: #FFFFFF;
-            border-radius: 20px;
-            /* Fully rounded */
-            padding: 10px 24px;
-            font-weight: 500;
-            transition: box-shadow 0.2s;
+        .input,
+        .select,
+        .textarea {
+            border-radius: 0.375rem;
         }
 
-        .md3-btn-filled:hover {
-            box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15);
+        .modal-box {
+            border-radius: 0.375rem;
         }
 
-        .md3-btn-tonal {
-            background-color: #E8DEF8;
-            color: #1D192B;
-            border-radius: 20px;
-            padding: 10px 24px;
-            font-weight: 500;
-        }
-
-        .md3-btn-text {
-            color: #6750A4;
-            font-weight: 500;
-            padding: 10px 12px;
-            border-radius: 20px;
-        }
-
-        .md3-btn-text:hover {
-            background-color: rgba(103, 80, 164, 0.08);
-        }
-
-        .md3-field {
-            background-color: #E7E0EC;
-            border-radius: 4px 4px 0 0;
-            border-bottom: 2px solid #49454F;
-        }
-
-        .md3-field:focus-within {
-            border-bottom-color: #6750A4;
-        }
-
-        dialog {
-            opacity: 0;
-            transform: scale(0.95);
-            transition: opacity 0.2s ease-out, transform 0.2s ease-out;
-        }
-
-        dialog[open] {
-            opacity: 1;
-            transform: scale(1);
-        }
-
-        dialog::backdrop {
-            background-color: rgba(0, 0, 0, 0.5);
-            opacity: 0;
-            transition: opacity 0.2s ease-out;
-        }
-
-        dialog[open]::backdrop {
-            opacity: 1;
+        .badge {
+            border-radius: 0.25rem;
         }
     </style>
     <script>
@@ -156,7 +57,7 @@
                 "btn.save": "Save",
                 "btn.delete": "Delete",
                 "btn.download": "Download",
-                "footer.text": "&copy; 2026 Seedance Client - MD3 Expressive",
+                "footer.text": "&copy; 2026 Seedance Client",
 
                 "projects.title": "Projects",
                 "projects.subtitle": "Manage your video generation campaigns",
@@ -201,7 +102,7 @@
                 "btn.save": "保存",
                 "btn.delete": "删除",
                 "btn.download": "下载视频",
-                "footer.text": "&copy; 2026 Seedance Client - MD3 Expressive (中文)",
+                "footer.text": "&copy; 2026 Seedance Client (中文)",
 
                 "projects.title": "项目列表",
                 "projects.subtitle": "管理您的视频生成任务",
@@ -239,7 +140,6 @@
         function getLanguage() {
             let lang = localStorage.getItem("seedance_lang");
             if (!lang) {
-                // Determine from browser
                 const browserLang = navigator.language || navigator.userLanguage;
                 if (browserLang.toLowerCase().startsWith("zh")) {
                     lang = "zh";
@@ -253,7 +153,6 @@
         function setLanguage(lang) {
             localStorage.setItem("seedance_lang", lang);
             applyLanguage();
-            // Update selector value if exists
             const sel = document.getElementById("lang-selector");
             if (sel) sel.value = lang;
         }
@@ -272,9 +171,6 @@
                     }
                 }
             });
-
-            // Special handling for confirmation dialogs if needed, or just let them remain simple 
-            // We can assume confirmation logic is handled inline, we might need a helper for alerts
         }
 
         window.addEventListener('DOMContentLoaded', () => {
@@ -290,63 +186,65 @@
     </script>
 </head>
 
-<body class="bg-md-sys-color-background min-h-screen text-md-sys-color-on-background">
-    <!-- Top App Bar -->
-    <nav class="bg-md-sys-color-surface shadow-sm mb-6 sticky top-0 z-50">
-        <div class="container mx-auto px-4 h-16 flex items-center justify-between">
-            <a href="/" class="text-2xl font-normal text-md-sys-color-on-surface flex items-center gap-2">
-                <span class="material-symbols-outlined">movie_creation</span>
+<body class="bg-base-200 min-h-screen text-base-content">
+    <!-- Top App Bar (DaisyUI Navbar) -->
+    <div class="navbar bg-base-100 border-b border-base-content/10 mb-4 sticky top-0 z-50">
+        <div class="navbar-start">
+            <a href="/" class="btn btn-ghost btn-sm text-lg gap-2">
+                <span class="material-symbols-outlined text-xl">movie_creation</span>
                 <span data-i18n="app.title">Seedance Manager</span>
             </a>
-            <div>
-                <button onclick="document.getElementById('settings-dialog').showModal()"
-                    class="md3-btn-text flex items-center gap-2 text-md-sys-color-on-surface-variant hover:bg-md-sys-color-on-surface/5 rounded-full px-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
-                        fill="currentColor">
-                        <path
-                            d="m370-80-16-128q-13-5-24.5-12T307-235l-119 50L78-375l103-78q-1-7-1-13.5v-27q0-6.5 1-13.5L78-585l110-190 119 50q11-8 23-15t24-12l16-128h220l16 128q13 5 24.5 12t22.5 15l119-50 110 190-103 78q1 7 1 13.5v27q0 6.5-1 13.5l103 78-110 190-119-50q-11 8-23 15t-24 12l-16 128H370Zm112-260q58 0 99-41t41-99q0-58-41-99t-99-41q-59 0-99.5 41T342-480q0 58 40.5 99t99.5 41Zm0-80q-25 0-42.5-17.5T422-480q0-25 17.5-42.5T482-540q25 0 42.5 17.5T542-480q0 25-17.5 42.5T482-420Z" />
-                    </svg>
-                    <span data-i18n="nav.settings">Settings</span>
-                </button>
-            </div>
         </div>
-    </nav>
+        <div class="navbar-end">
+            <button onclick="document.getElementById('settings-dialog').showModal()" class="btn btn-ghost btn-sm gap-1">
+                <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20"
+                    fill="currentColor">
+                    <path
+                        d="m370-80-16-128q-13-5-24.5-12T307-235l-119 50L78-375l103-78q-1-7-1-13.5v-27q0-6.5 1-13.5L78-585l110-190 119 50q11-8 23-15t24-12l16-128h220l16 128q13 5 24.5 12t22.5 15l119-50 110 190-103 78q1 7 1 13.5v27q0 6.5-1 13.5l103 78-110 190-119-50q-11 8-23 15t-24 12l-16 128H370Zm112-260q58 0 99-41t41-99q0-58-41-99t-99-41q-59 0-99.5 41T342-480q0 58 40.5 99t99.5 41Zm0-80q-25 0-42.5-17.5T422-480q0-25 17.5-42.5T482-540q25 0 42.5 17.5T542-480q0 25-17.5 42.5T482-420Z" />
+                </svg>
+                <span data-i18n="nav.settings">Settings</span>
+            </button>
+        </div>
+    </div>
 
-    <dialog id="settings-dialog" class="p-0 rounded-md3-xl shadow-2xl bg-transparent border-none w-full max-w-md">
-        <div class="bg-md-sys-color-surface p-6 rounded-md3-xl">
-            <h3 class="text-2xl font-normal text-md-sys-color-on-surface mb-4" data-i18n="settings.title">Settings</h3>
+    <!-- Settings Modal (DaisyUI Modal) -->
+    <dialog id="settings-dialog" class="modal">
+        <div class="modal-box">
+            <h3 class="text-lg font-bold mb-4" data-i18n="settings.title">Settings</h3>
 
-            <div class="mb-6">
-                <label class="block text-sm font-medium text-md-sys-color-primary mb-2"
-                    data-i18n="settings.language">Language</label>
-                <div class="relative">
-                    <select id="lang-selector"
-                        class="w-full bg-md-sys-color-surface-variant/30 border-b-2 border-md-sys-color-outline px-4 py-3 outline-none focus:border-md-sys-color-primary transition-colors text-md-sys-color-on-surface rounded-t-sm appearance-none">
-                        <option value="en">English (US)</option>
-                        <option value="zh">简体中文 (Simplified Chinese)</option>
-                    </select>
-                </div>
+            <div class="form-control mb-3">
+                <label class="label py-1">
+                    <span class="label-text text-sm font-medium" data-i18n="settings.language">Language</span>
+                </label>
+                <select id="lang-selector" class="select select-bordered select-sm w-full">
+                    <option value="en">English (US)</option>
+                    <option value="zh">简体中文 (Simplified Chinese)</option>
+                </select>
             </div>
 
             <form action="/settings/apikey" method="POST">
-                <div class="mb-6">
-                    <label class="block text-sm font-medium text-md-sys-color-primary mb-2"
-                        data-i18n="settings.apikey">API Key</label>
+                <div class="form-control mb-3">
+                    <label class="label py-1">
+                        <span class="label-text text-sm font-medium" data-i18n="settings.apikey">API Key</span>
+                    </label>
                     <input type="password" name="api_key" data-i18n="settings.apikey.placeholder"
-                        placeholder="Enter new API Key"
-                        class="w-full bg-md-sys-color-surface-variant/30 border-b-2 border-md-sys-color-outline px-4 py-3 outline-none focus:border-md-sys-color-primary transition-colors text-md-sys-color-on-surface rounded-t-sm">
-                    <p class="text-xs text-md-sys-color-on-surface-variant mt-2" data-i18n="settings.apikey.hint">
-                        Updating this will restart the client connection. The key is not stored permanently on disk for
-                        security, it resets on restart.
-                    </p>
+                        placeholder="Enter new API Key" class="input input-bordered input-sm w-full">
+                    <label class="label py-1">
+                        <span class="label-text-alt text-xs" data-i18n="settings.apikey.hint">
+                            Updating this will restart the client connection. The key is transient.
+                        </span>
+                    </label>
                 </div>
-                <div class="flex justify-end gap-2">
+                <div class="modal-action">
                     <button type="button" onclick="document.getElementById('settings-dialog').close()"
-                        class="md3-btn-text" data-i18n="btn.cancel">Cancel</button>
-                    <button type="submit" class="md3-btn-filled" data-i18n="btn.save">Save</button>
+                        class="btn btn-ghost btn-sm" data-i18n="btn.cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm" data-i18n="btn.save">Save</button>
                 </div>
             </form>
         </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
     </dialog>
 
     <div class="container mx-auto px-4 max-w-6xl">
@@ -355,9 +253,8 @@
         {{ define "footer" }}
     </div>
     <footer
-        class="mt-12 py-8 text-center text-md-sys-color-on-surface-variant text-sm bg-md-sys-color-surface-variant/30"
-        data-i18n="footer.text">
-        &copy; 2026 Seedance Client - MD3 Expressive
+        class="footer footer-center p-6 bg-base-100 border-t border-base-content/10 text-base-content/60 mt-8 text-sm">
+        <p data-i18n="footer.text">&copy; 2026 Seedance Client</p>
     </footer>
 </body>
 

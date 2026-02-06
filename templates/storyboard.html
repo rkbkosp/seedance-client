@@ -1,26 +1,23 @@
 {{ template "header" . }}
 
-<div class="mb-6">
-    <a href="/"
-        class="inline-flex items-center text-md-sys-color-primary hover:text-md-sys-color-primary/80 font-medium">
-        <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20" fill="currentColor"
-            class="mr-1">
+<div class="mb-4">
+    <a href="/" class="btn btn-ghost btn-sm gap-1 text-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
             <path d="m313-440 224 224-57 56-320-320 320-320 57 56-224 224h487v80H313Z" />
         </svg>
         <span data-i18n="sb.back">Back to Projects</span>
     </a>
 </div>
 
-<div class="mb-10 p-6 bg-md-sys-color-surface-variant rounded-md3-xl">
+<div class="mb-6 p-4 bg-base-300 rounded-md">
     <div class="flex justify-between items-start">
         <div>
-            <h1 class="text-4xl font-normal text-md-sys-color-on-surface-variant mb-2">{{ .Project.Name }}</h1>
-            <p class="text-md-sys-color-on-surface-variant opacity-80">Campaign ID: {{ .Project.ID }}</p>
+            <h1 class="text-2xl font-bold text-base-content mb-1">{{ .Project.Name }}</h1>
+            <p class="text-xs text-base-content/50">Campaign ID: {{ .Project.ID }}</p>
         </div>
-        <a href="/projects/{{ .Project.ID }}/export"
-            class="md3-btn-filled flex items-center gap-2 px-5 py-3 rounded-full shadow-lg hover:shadow-xl transition transform hover:-translate-y-0.5"
+        <a href="/projects/{{ .Project.ID }}/export" class="btn btn-primary btn-sm gap-1"
             title="Export all succeeded videos as ZIP with FCPXML">
-            <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20" fill="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
                 <path
                     d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
             </svg>
@@ -30,16 +27,14 @@
 </div>
 
 <!-- Storyboard List -->
-<div class="space-y-12">
+<div class="space-y-8">
     {{ range .Project.Storyboards }}
-    <div class="bg-md-sys-color-surface rounded-md3-xl shadow-lg border border-md-sys-color-outline/10 overflow-hidden mb-12"
-        id="sb-container-{{ .ID }}">
+    <div class="card card-compact bg-base-100 border border-base-content/10" id="sb-container-{{ .ID }}">
 
         <!-- Takes Tab Bar -->
-        <div
-            class="px-8 pt-4 pb-0 flex items-center gap-2 overflow-x-auto border-b border-md-sys-color-surface-variant/30 scrollbar-hide">
+        <div class="tabs tabs-boxed bg-base-200 p-1 gap-1 overflow-x-auto rounded-t-md">
             <span
-                class="text-xs font-bold text-md-sys-color-on-surface-variant uppercase tracking-wider mr-2">Versions:</span>
+                class="text-xs font-bold text-base-content/60 uppercase tracking-wider mr-2 self-center px-2">Versions:</span>
             {{ $activeTakeID := .ActiveTake.ID }}
             {{ $activeVersion := 1 }}
             {{ range $index, $take := .Takes }}
@@ -47,17 +42,12 @@
             {{ if eq $take.ID $activeTakeID }}
             {{ $activeVersion = $version }}
             {{ end }}
-            <div class="group relative flex items-center">
-                <button onclick="switchTake({{ .ID }}, {{ .StoryboardID }}, {{ $version }})" class="take-tab-{{ .StoryboardID }} px-4 py-2 text-sm font-medium rounded-t-lg transition border-b-2 
-            {{ if eq .ID $activeTakeID }}
-                text-md-sys-color-primary border-md-sys-color-primary bg-md-sys-color-surface-variant/20
-            {{ else }}
-                text-md-sys-color-on-surface-variant/70 border-transparent hover:text-md-sys-color-on-surface-variant hover:bg-md-sys-color-surface-variant/10
-            {{ end }}" data-take-id="{{ .ID }}" data-version="{{ $version }}">
-                    v{{ $version }}
-                    {{ if .IsGood }}<span class="ml-1" title="Marked as Good Take">🩷</span>{{ end }}
-                </button>
-            </div>
+            <button onclick="switchTake({{ .ID }}, {{ .StoryboardID }}, {{ $version }})"
+                class="take-tab-{{ .StoryboardID }} tab tab-sm {{ if eq .ID $activeTakeID }}tab-active{{ end }}"
+                data-take-id="{{ .ID }}" data-version="{{ $version }}">
+                v{{ $version }}
+                {{ if .IsGood }}<span class="ml-1" title="Marked as Good Take">🩷</span>{{ end }}
+            </button>
             {{ end }}
         </div>
 
@@ -65,31 +55,28 @@
         <div id="take-content-{{ .StoryboardID }}" class="take-content" data-take-id="{{ .ID }}"
             data-current-version="{{ $activeVersion }}">
             <!-- Header -->
-            <div
-                class="px-8 py-5 border-b border-md-sys-color-surface-variant/50 flex justify-between items-center bg-md-sys-color-surface">
-                <div class="flex items-center gap-4">
-                    <span class="text-lg font-medium text-md-sys-color-on-surface"><span
-                            data-i18n="sb.scene">Version</span> {{ $activeVersion }}</span>
-                    <span id="sb-status-{{ .ID }}" class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide 
-                    {{ if eq .Status " Succeeded" }}bg-green-100 text-green-800 {{ else if eq .Status "Failed"
-                        }}bg-red-100 text-red-800 {{ else if eq .Status "Running" }}bg-blue-100 text-blue-800 {{ else if
-                        eq .Status "Queued" }}bg-blue-100 text-blue-800 {{ else }}bg-gray-200 text-gray-700{{ end }}">
+            <div class="px-4 py-3 border-b border-base-content/10 flex justify-between items-center bg-base-100">
+                <div class="flex items-center gap-3">
+                    <span class="text-sm font-semibold"><span data-i18n="sb.scene">Version</span> {{ $activeVersion
+                        }}</span>
+                    <span id="sb-status-{{ .ID }}" class="badge badge-sm {{ if eq .Status " Succeeded" }}badge-success{{
+                        else if eq .Status "Failed" }}badge-error{{ else if eq .Status "Running" }}badge-info{{ else if
+                        eq .Status "Queued" }}badge-info{{ else }}badge-ghost{{ end }}">
                         {{ .Status }}
                     </span>
                     <!-- Good Take Toggle -->
                     <button onclick="toggleGoodTake({{ .ID }}, this)"
-                        class="p-2 rounded-full transition {{ if .IsGood }}text-pink-500 bg-pink-100{{ else }}text-gray-400 hover:text-pink-400{{ end }}"
+                        class="btn btn-circle btn-ghost btn-xs {{ if .IsGood }}text-pink-500{{ else }}text-base-content/30{{ end }}"
                         title="Mark as Good Take">
-                        <span class="material-symbols-outlined text-lg">favorite</span>
+                        <span class="material-symbols-outlined text-sm">favorite</span>
                     </button>
                 </div>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-1">
                     <!-- Edit Button -->
                     <button type="button"
                         onclick="openEditDialog({{ .StoryboardID }}, '{{ .Prompt }}', '{{ .ModelID }}', '{{ .Ratio }}', {{ .Duration }}, {{ .GenerateAudio }}, '{{ .ServiceTier }}')"
-                        class="text-md-sys-color-primary hover:bg-md-sys-color-primary/10 p-2 rounded-full transition"
-                        title="Edit & Save as New Take">
-                        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                        class="btn btn-ghost btn-circle btn-xs text-primary" title="Edit & Save as New Take">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16"
                             fill="currentColor">
                             <path
                                 d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z" />
@@ -97,9 +84,8 @@
                     </button>
                     <!-- Delete Button (Delete Take) -->
                     <button type="button" onclick="deleteTake({{ .ID }})"
-                        class="text-md-sys-color-error hover:bg-md-sys-color-error/10 p-2 rounded-full transition"
-                        title="Delete Take">
-                        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                        class="btn btn-ghost btn-circle btn-xs text-error" title="Delete Take">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16"
                             fill="currentColor">
                             <path
                                 d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z" />
@@ -109,9 +95,9 @@
                     <form action="/storyboards/delete/{{ .StoryboardID }}" method="POST" class="inline"
                         onsubmit="return confirm(window.i18n_data[getLanguage()]['sb.confirm_delete'] || 'Delete entire storyboard container?');">
                         <button type="submit"
-                            class="text-md-sys-color-on-surface-variant/50 hover:text-md-sys-color-error hover:bg-md-sys-color-error/10 p-2 rounded-full transition"
+                            class="btn btn-ghost btn-circle btn-xs text-base-content/30 hover:text-error"
                             title="Delete Entire Storyboard">
-                            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                            <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16"
                                 fill="currentColor">
                                 <path
                                     d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z" />
@@ -123,91 +109,74 @@
 
             <div class="flex flex-col md:flex-row">
                 <!-- Left: Inputs & Config -->
-                <div class="md:w-1/2 p-8 space-y-6">
+                <div class="md:w-1/2 p-4 space-y-4">
                     <div>
-                        <h3 class="text-sm font-bold text-md-sys-color-primary mb-2 uppercase tracking-wider"
-                            data-i18n="sb.prompt">Prompt</h3>
-                        <p class="text-md-sys-color-on-surface text-lg leading-relaxed">{{ .Prompt }}</p>
+                        <h3 class="text-xs font-bold text-primary mb-1 uppercase tracking-wider" data-i18n="sb.prompt">
+                            Prompt</h3>
+                        <p class="text-sm text-base-content leading-relaxed">{{ .Prompt }}</p>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-4">
+                    <div class="grid grid-cols-2 gap-3">
                         {{ if .FirstFramePath }}
                         <div class="relative group">
-                            <label class="block text-xs font-bold text-md-sys-color-on-surface-variant mb-1 uppercase"
+                            <label class="block text-xs font-bold text-base-content/60 mb-1 uppercase"
                                 data-i18n="sb.first_frame">First Frame</label>
-                            <div class="rounded-md3-md overflow-hidden border border-md-sys-color-outline/20">
-                                <img src="/{{ .FirstFramePath }}" class="w-full h-32 object-cover">
+                            <div class="rounded-md overflow-hidden border border-base-content/10">
+                                <img src="/{{ .FirstFramePath }}" class="w-full h-24 object-cover">
                             </div>
                         </div>
                         {{ end }}
                         {{ if .LastFramePath }}
                         <div class="relative group">
-                            <label class="block text-xs font-bold text-md-sys-color-on-surface-variant mb-1 uppercase"
+                            <label class="block text-xs font-bold text-base-content/60 mb-1 uppercase"
                                 data-i18n="sb.last_frame">Last Frame</label>
-                            <div class="rounded-md3-md overflow-hidden border border-md-sys-color-outline/20">
-                                <img src="/{{ .LastFramePath }}" class="w-full h-32 object-cover">
+                            <div class="rounded-md overflow-hidden border border-base-content/10">
+                                <img src="/{{ .LastFramePath }}" class="w-full h-24 object-cover">
                             </div>
                         </div>
                         {{ end }}
                     </div>
 
-                    <div class="flex flex-wrap gap-3 mt-4">
-                        <span
-                            class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
-                            {{ .ModelID }}
-                        </span>
-                        <span
-                            class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
-                            {{ if eq .ServiceTier "flex" }}Economic (Flex){{ else }}Standard{{ end }}
-                        </span>
-                        <span
-                            class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
-                            {{ .Ratio }}
-                        </span>
-                        <span
-                            class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
-                            {{ .Duration }}s
-                        </span>
+                    <div class="flex flex-wrap gap-1 mt-2">
+                        <span class="badge badge-secondary badge-sm">{{ .ModelID }}</span>
+                        <span class="badge badge-secondary badge-sm">{{ if eq .ServiceTier "flex" }}Flex{{ else
+                            }}Standard{{ end }}</span>
+                        <span class="badge badge-secondary badge-sm">{{ .Ratio }}</span>
+                        <span class="badge badge-secondary badge-sm">{{ .Duration }}s</span>
                     </div>
                 </div>
 
                 <!-- Right: Media Output -->
                 <div id="sb-right-col-{{ .ID }}"
-                    class="md:w-1/2 bg-black flex items-center justify-center relative min-h-[360px]">
+                    class="md:w-1/2 bg-neutral flex items-center justify-center relative min-h-[280px]">
                     {{ if eq .Status "Succeeded" }}
-                    <video controls class="w-full h-full max-h-[500px] object-contain" loop>
+                    <video controls class="w-full h-full max-h-[400px] object-contain" loop>
                         <source src="{{ .VideoURL }}" type="video/mp4">
                         Your browser does not support the video tag.
                     </video>
                     <!-- Floating Action Buttons -->
-                    <div class="absolute bottom-4 right-4 flex gap-2">
+                    <div class="absolute bottom-3 right-3 flex gap-1">
                         {{ if .LastFrameURL }}
-                        <!-- Use Last Frame as First Frame for New Storyboard -->
                         <button type="button" onclick="useAsFirstFrame('{{ .LastFrameURL }}')"
-                            class="bg-md-sys-color-tertiary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-tertiary/90 transition"
-                            title="Use last frame as first frame for new storyboard">
-                            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                            class="btn btn-accent btn-circle btn-sm" title="Use last frame as first frame">
+                            <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16"
                                 fill="currentColor">
                                 <path
                                     d="M440-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h160v80H280q-50 0-85 35t-35 85q0 50 35 85t85 35h160v80ZM320-440v-80h320v80H320Zm200 160v-80h160q50 0 85-35t35-85q0-50-35-85t-85-35H520v-80h160q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H520Z" />
                             </svg>
                         </button>
-                        <!-- Download Last Frame -->
-                        <a href="{{ .LastFrameURL }}" download
-                            class="bg-md-sys-color-secondary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-secondary/90 transition"
+                        <a href="{{ .LastFrameURL }}" download class="btn btn-secondary btn-circle btn-sm"
                             title="Download last frame">
-                            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                            <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16"
                                 fill="currentColor">
                                 <path
                                     d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z" />
                             </svg>
                         </a>
                         {{ end }}
-                        <!-- Download Video -->
-                        <a href="{{ .VideoURL }}" download
-                            class="bg-md-sys-color-primary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-primary/90 transition"
+                        <a href="{{ .VideoURL }}" download class="btn btn-primary btn-circle btn-sm"
                             title="Download video">
-                            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                            <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16"
                                 fill="currentColor">
                                 <path
                                     d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
@@ -215,17 +184,14 @@
                         </a>
                     </div>
                     {{ else if or (eq .Status "Running") (eq .Status "Queued") }}
-                    <div class="text-white flex flex-col items-center">
-                        <div
-                            class="w-12 h-12 border-4 border-md-sys-color-primary border-t-transparent rounded-full animate-spin mb-4">
-                        </div>
-                        <p class="font-medium tracking-wide" data-i18n="sb.generating">GENERATING SCENE...</p>
+                    <div class="text-base-content flex flex-col items-center">
+                        <span class="loading loading-spinner loading-md text-primary mb-3"></span>
+                        <p class="text-sm font-medium" data-i18n="sb.generating">GENERATING...</p>
                     </div>
                     {{ else if eq .Status "Draft" }}
                     <form action="/takes/{{ .ID }}/generate" method="POST" class="generate-form" data-id="{{ .ID }}">
-                        <button type="submit"
-                            class="bg-md-sys-color-primary-container text-md-sys-color-on-primary-container px-8 py-4 rounded-full font-bold text-lg shadow-lg hover:shadow-xl hover:scale-105 transition transform flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                        <button type="submit" class="btn btn-primary btn-sm gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16"
                                 fill="currentColor">
                                 <path d="M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z" />
                             </svg>
@@ -233,19 +199,17 @@
                         </button>
                     </form>
                     {{ else }}
-                    <div class="text-md-sys-color-error flex flex-col items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" height="48" viewBox="0 -960 960 960" width="48"
+                    <div class="text-error flex flex-col items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="32" viewBox="0 -960 960 960" width="32"
                             fill="currentColor">
                             <path
                                 d="M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z" />
                         </svg>
-                        <p class="mt-2 font-bold" data-i18n="sb.failed">Generation Failed</p>
-                        <!-- Retry Button -->
-                        <form action="/takes/{{ .ID }}/generate" method="POST" class="generate-form mt-4"
+                        <p class="mt-1 text-sm font-bold" data-i18n="sb.failed">Failed</p>
+                        <form action="/takes/{{ .ID }}/generate" method="POST" class="generate-form mt-2"
                             data-id="{{ .ID }}">
-                            <button type="submit"
-                                class="bg-md-sys-color-error text-white px-6 py-2 rounded-full font-medium shadow-md hover:shadow-lg hover:scale-105 transition transform flex items-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20"
+                            <button type="submit" class="btn btn-error btn-sm gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" height="14" viewBox="0 -960 960 960" width="14"
                                     fill="currentColor">
                                     <path
                                         d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z" />
@@ -263,237 +227,234 @@
     {{ end }}
 </div>
 
-<!-- Add New Storyboard Form (MD3 Card) -->
-<div class="mt-16 bg-white rounded-md3-xl shadow-lg border border-md-sys-color-outline/20 p-8">
-    <div class="flex items-center gap-3 mb-8">
-        <div
-            class="w-10 h-10 rounded-full bg-md-sys-color-primary-container flex items-center justify-center text-md-sys-color-on-primary-container">
-            <span class="material-symbols-outlined text-2xl font-bold">+</span>
-        </div>
-        <h3 class="text-2xl font-normal text-md-sys-color-on-surface" data-i18n="sb.new">New Storyboard</h3>
-    </div>
-
-    <form action="/projects/{{ .Project.ID }}/storyboards" method="POST" enctype="multipart/form-data"
-        class="space-y-8">
-        <!-- Prompt Field -->
-        <div class="relative">
-            <label class="block text-sm font-medium text-md-sys-color-primary mb-2 ml-1"
-                data-i18n="sb.prompt">Prompt</label>
-            <textarea name="prompt" rows="3" required
-                class="w-full bg-md-sys-color-surface-variant/30 border-b-2 border-md-sys-color-outline hover:border-md-sys-color-on-surface-variant focus:border-md-sys-color-primary rounded-t-lg px-4 py-3 outline-none transition-colors resize-none"
-                data-i18n="sb.desc_placeholder" placeholder="Describe your scene in detail..."></textarea>
-            <p class="text-xs text-md-sys-color-outline mt-1 ml-1" data-i18n="sb.desc_hint">Detailed descriptions
-                yield
-                better results.</p>
+<!-- Add New Storyboard Form -->
+<div class="mt-10 card card-compact bg-base-100 border border-base-content/10">
+    <div class="card-body">
+        <div class="flex items-center gap-2 mb-4">
+            <div class="w-8 h-8 rounded-md bg-primary flex items-center justify-center text-primary-content">
+                <span class="material-symbols-outlined text-lg">add</span>
+            </div>
+            <h3 class="card-title text-lg" data-i18n="sb.new">New Storyboard</h3>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <!-- First Frame -->
-            <div>
-                <label class="block text-sm font-medium text-md-sys-color-on-surface-variant mb-2 ml-1"
-                    data-i18n="sb.first_frame">First Frame (Start)</label>
-                <div id="drop-first-frame"
-                    class="drag-drop-zone relative bg-md-sys-color-surface-variant/30 rounded-lg border-2 border-dashed border-md-sys-color-outline p-6 text-center hover:bg-md-sys-color-primary/5 transition cursor-pointer">
-                    <input type="file" id="input-first-frame" name="first_frame" accept="image/*"
-                        class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
-                    <div class="upload-placeholder text-md-sys-color-primary">
-                        <svg xmlns="http://www.w3.org/2000/svg" height="32" viewBox="0 -960 960 960" width="32"
-                            fill="currentColor" class="mx-auto mb-2">
-                            <path
-                                d="M440-320v-326L336-542l-56-58 200-200 200 200-56 58-104-104v326h-80ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
-                        </svg>
-                        <span class="font-medium" data-i18n="sb.upload_img">Upload or Drop Image</span>
+        <form action="/projects/{{ .Project.ID }}/storyboards" method="POST" enctype="multipart/form-data"
+            class="space-y-4">
+            <!-- Prompt Field -->
+            <div class="form-control">
+                <label class="label py-1">
+                    <span class="label-text text-sm font-medium" data-i18n="sb.prompt">Prompt</span>
+                </label>
+                <textarea name="prompt" rows="2" required class="textarea textarea-bordered textarea-sm w-full"
+                    data-i18n="sb.desc_placeholder" placeholder="Describe your scene in detail..."></textarea>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- First Frame -->
+                <div class="form-control">
+                    <label class="label py-1">
+                        <span class="label-text text-sm" data-i18n="sb.first_frame">First Frame</span>
+                    </label>
+                    <div id="drop-first-frame"
+                        class="drag-drop-zone relative border border-dashed border-base-content/20 rounded-md p-4 text-center hover:bg-base-200 transition cursor-pointer">
+                        <input type="file" id="input-first-frame" name="first_frame" accept="image/*"
+                            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div class="upload-placeholder text-primary text-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                                fill="currentColor" class="mx-auto mb-1">
+                                <path
+                                    d="M440-320v-326L336-542l-56-58 200-200 200 200-56 58-104-104v326h-80ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
+                            </svg>
+                            <span class="font-medium" data-i18n="sb.upload_img">Upload Image</span>
+                        </div>
+                        <img class="preview-img hidden w-full h-24 object-cover rounded-md">
                     </div>
-                    <img class="preview-img hidden w-full h-32 object-cover rounded">
                 </div>
-            </div>
-            <!-- Last Frame -->
-            <div>
-                <label class="block text-sm font-medium text-md-sys-color-on-surface-variant mb-2 ml-1"
-                    data-i18n="sb.last_frame">Last Frame (End)</label>
-                <div id="drop-last-frame"
-                    class="drag-drop-zone relative bg-md-sys-color-surface-variant/30 rounded-lg border-2 border-dashed border-md-sys-color-outline p-6 text-center hover:bg-md-sys-color-primary/5 transition cursor-pointer">
-                    <input type="file" id="input-last-frame" name="last_frame" accept="image/*"
-                        class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
-                    <div class="upload-placeholder text-md-sys-color-primary">
-                        <svg xmlns="http://www.w3.org/2000/svg" height="32" viewBox="0 -960 960 960" width="32"
-                            fill="currentColor" class="mx-auto mb-2">
-                            <path
-                                d="M440-320v-326L336-542l-56-58 200-200 200 200-56 58-104-104v326h-80ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
-                        </svg>
-                        <span class="font-medium" data-i18n="sb.upload_img">Upload or Drop Image</span>
+                <!-- Last Frame -->
+                <div class="form-control">
+                    <label class="label py-1">
+                        <span class="label-text text-sm" data-i18n="sb.last_frame">Last Frame</span>
+                    </label>
+                    <div id="drop-last-frame"
+                        class="drag-drop-zone relative border border-dashed border-base-content/20 rounded-md p-4 text-center hover:bg-base-200 transition cursor-pointer">
+                        <input type="file" id="input-last-frame" name="last_frame" accept="image/*"
+                            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div class="upload-placeholder text-primary text-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                                fill="currentColor" class="mx-auto mb-1">
+                                <path
+                                    d="M440-320v-326L336-542l-56-58 200-200 200 200-56 58-104-104v326h-80ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
+                            </svg>
+                            <span class="font-medium" data-i18n="sb.upload_img">Upload Image</span>
+                        </div>
+                        <img class="preview-img hidden w-full h-24 object-cover rounded-md">
                     </div>
-                    <img class="preview-img hidden w-full h-32 object-cover rounded">
                 </div>
             </div>
-        </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <!-- Model Selection -->
-            <div class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2">
-                <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.model">Model</label>
-                <select name="model_id"
-                    class="w-full bg-transparent outline-none text-md-sys-color-on-surface font-medium py-1">
-                    <option value="doubao-seedance-1-5-pro-251215">Seedance 1.5 Pro</option>
-                    <option value="doubao-seedance-1-0-pro-fast-251015">Seedance 1.0 Pro Fast</option>
-                </select>
-            </div>
-            <!-- Ratio -->
-            <div class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2">
-                <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.ratio">Ratio</label>
-                <select name="ratio"
-                    class="w-full bg-transparent outline-none text-md-sys-color-on-surface font-medium py-1">
-                    <option value="adaptive">Adaptive (Follow Image)</option>
-                    <option value="16:9">16:9 (Landscape)</option>
-                    <option value="9:16">9:16 (Portrait)</option>
-                </select>
-            </div>
-            <!-- Duration -->
-            <div class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2">
-                <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.duration">Duration</label>
-                <select name="duration"
-                    class="w-full bg-transparent outline-none text-md-sys-color-on-surface font-medium py-1">
-                    <option value="5" selected>5s</option>
-                    <option value="10">10s</option>
-                </select>
-            </div>
-            <!-- Service Tier (Mode) -->
-            <div class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2">
-                <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.mode">Mode</label>
-                <select name="service_tier"
-                    class="w-full bg-transparent outline-none text-md-sys-color-on-surface font-medium py-1">
-                    <option value="standard" selected>Standard (Fast)</option>
-                    <option value="flex">Economic (Flex)</option>
-                </select>
-            </div>
-            <!-- Generate Audio Checkbox -->
-            <div
-                class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2 flex items-center justify-between">
-                <div class="flex flex-col">
-                    <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.audio">Generate
-                        Audio</label>
-                    <span class="text-[10px] text-md-sys-color-outline leading-tight">Sync audio (1.5 Pro
-                        only)</span>
-                </div>
-                <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
-                    <input type="checkbox" name="generate_audio" id="new-generate-audio" value="true"
-                        class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer border-md-sys-color-outline" />
-                    <label for="new-generate-audio"
-                        class="toggle-label block overflow-hidden h-5 rounded-full bg-md-sys-color-surface-variant cursor-pointer border border-md-sys-color-outline"></label>
-                </div>
-            </div>
-        </div>
-
-        <div class="pt-6 flex justify-end">
-            <button type="submit"
-                class="md3-btn-filled text-lg px-8 py-3 rounded-full shadow-lg hover:shadow-xl transition transform hover:-translate-y-1"
-                data-i18n="sb.add_btn">
-                Add Storyboard
-            </button>
-        </div>
-    </form>
-</div>
-
-<!-- Edit Storyboard Modal Dialog -->
-<dialog id="edit-dialog" class="p-0 rounded-md3-xl shadow-2xl bg-transparent border-none w-full max-w-lg">
-    <div class="bg-md-sys-color-surface p-6 rounded-md3-xl">
-        <h3 class="text-2xl font-normal text-md-sys-color-on-surface mb-4" data-i18n="sb.edit_title">Edit Storyboard
-        </h3>
-
-        <form id="edit-form" method="POST" enctype="multipart/form-data" class="space-y-6">
-            <!-- Prompt -->
-            <div>
-                <label class="block text-sm font-medium text-md-sys-color-primary mb-2"
-                    data-i18n="sb.prompt">Prompt</label>
-                <textarea id="edit-prompt" name="prompt" rows="3" required
-                    class="w-full bg-md-sys-color-surface-variant/30 border-b-2 border-md-sys-color-outline px-4 py-3 outline-none focus:border-md-sys-color-primary transition-colors resize-none rounded-t-sm"></textarea>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <!-- Model -->
-                <div
-                    class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2">
-                    <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.model">Model</label>
-                    <select id="edit-model" name="model_id"
-                        class="w-full bg-transparent outline-none text-md-sys-color-on-surface font-medium py-1">
-                        <option value="doubao-seedance-1-5-pro-251215">Seedance 1.5 Pro</option>
-                        <option value="doubao-seedance-1-0-pro-fast-251015">Seedance 1.0 Pro Fast</option>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <!-- Model Selection -->
+                <div class="form-control">
+                    <label class="label py-1">
+                        <span class="label-text text-xs" data-i18n="sb.model">Model</span>
+                    </label>
+                    <select name="model_id" class="select select-bordered select-sm w-full">
+                        <option value="doubao-seedance-1-5-pro-251215">1.5 Pro</option>
+                        <option value="doubao-seedance-1-0-pro-fast-251015">1.0 Fast</option>
                     </select>
                 </div>
                 <!-- Ratio -->
-                <div
-                    class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2">
-                    <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.ratio">Ratio</label>
-                    <select id="edit-ratio" name="ratio"
-                        class="w-full bg-transparent outline-none text-md-sys-color-on-surface font-medium py-1">
+                <div class="form-control">
+                    <label class="label py-1">
+                        <span class="label-text text-xs" data-i18n="sb.ratio">Ratio</span>
+                    </label>
+                    <select name="ratio" class="select select-bordered select-sm w-full">
                         <option value="adaptive">Adaptive</option>
                         <option value="16:9">16:9</option>
                         <option value="9:16">9:16</option>
                     </select>
                 </div>
                 <!-- Duration -->
-                <div
-                    class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2">
-                    <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.duration">Duration</label>
-                    <select id="edit-duration" name="duration"
-                        class="w-full bg-transparent outline-none text-md-sys-color-on-surface font-medium py-1">
+                <div class="form-control">
+                    <label class="label py-1">
+                        <span class="label-text text-xs" data-i18n="sb.duration">Duration</span>
+                    </label>
+                    <select name="duration" class="select select-bordered select-sm w-full">
+                        <option value="5" selected>5s</option>
+                        <option value="10">10s</option>
+                    </select>
+                </div>
+                <!-- Service Tier -->
+                <div class="form-control">
+                    <label class="label py-1">
+                        <span class="label-text text-xs" data-i18n="sb.mode">Mode</span>
+                    </label>
+                    <select name="service_tier" class="select select-bordered select-sm w-full">
+                        <option value="standard" selected>Standard</option>
+                        <option value="flex">Flex</option>
+                    </select>
+                </div>
+                <!-- Generate Audio Toggle -->
+                <div class="form-control">
+                    <label class="label py-1">
+                        <span class="label-text text-xs" data-i18n="sb.audio">Audio</span>
+                    </label>
+                    <label class="label cursor-pointer justify-start gap-2 bg-base-200 rounded-md px-2 h-8">
+                        <input type="checkbox" name="generate_audio" id="new-generate-audio" value="true"
+                            class="toggle toggle-primary toggle-sm">
+                        <span class="label-text text-xs">1.5 Pro</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="pt-2 flex justify-end">
+                <button type="submit" class="btn btn-primary btn-sm" data-i18n="sb.add_btn">Add Storyboard</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Storyboard Modal Dialog -->
+<dialog id="edit-dialog" class="modal">
+    <div class="modal-box max-w-md">
+        <h3 class="text-lg font-bold mb-3" data-i18n="sb.edit_title">Edit Storyboard</h3>
+
+        <form id="edit-form" method="POST" enctype="multipart/form-data" class="space-y-3">
+            <!-- Prompt -->
+            <div class="form-control">
+                <label class="label py-1">
+                    <span class="label-text text-sm font-medium" data-i18n="sb.prompt">Prompt</span>
+                </label>
+                <textarea id="edit-prompt" name="prompt" rows="2" required
+                    class="textarea textarea-bordered textarea-sm w-full"></textarea>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+                <!-- Model -->
+                <div class="form-control">
+                    <label class="label py-0.5">
+                        <span class="label-text text-xs" data-i18n="sb.model">Model</span>
+                    </label>
+                    <select id="edit-model" name="model_id" class="select select-bordered select-sm w-full">
+                        <option value="doubao-seedance-1-5-pro-251215">1.5 Pro</option>
+                        <option value="doubao-seedance-1-0-pro-fast-251015">1.0 Fast</option>
+                    </select>
+                </div>
+                <!-- Ratio -->
+                <div class="form-control">
+                    <label class="label py-0.5">
+                        <span class="label-text text-xs" data-i18n="sb.ratio">Ratio</span>
+                    </label>
+                    <select id="edit-ratio" name="ratio" class="select select-bordered select-sm w-full">
+                        <option value="adaptive">Adaptive</option>
+                        <option value="16:9">16:9</option>
+                        <option value="9:16">9:16</option>
+                    </select>
+                </div>
+                <!-- Duration -->
+                <div class="form-control">
+                    <label class="label py-0.5">
+                        <span class="label-text text-xs" data-i18n="sb.duration">Duration</span>
+                    </label>
+                    <select id="edit-duration" name="duration" class="select select-bordered select-sm w-full">
                         <option value="5">5s</option>
                         <option value="10">10s</option>
                     </select>
                 </div>
-                <!-- Service Tier (Mode) -->
-                <div
-                    class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2">
-                    <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.mode">Mode</label>
-                    <select id="edit-service-tier" name="service_tier"
-                        class="w-full bg-transparent outline-none text-md-sys-color-on-surface font-medium py-1">
-                        <option value="standard">Standard (Fast)</option>
-                        <option value="flex">Economic (Flex)</option>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+                <!-- Service Tier -->
+                <div class="form-control">
+                    <label class="label py-0.5">
+                        <span class="label-text text-xs" data-i18n="sb.mode">Mode</span>
+                    </label>
+                    <select id="edit-service-tier" name="service_tier" class="select select-bordered select-sm w-full">
+                        <option value="standard">Standard</option>
+                        <option value="flex">Flex</option>
                     </select>
                 </div>
                 <!-- Generate Audio -->
-                <div
-                    class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2 flex items-center justify-between">
-                    <div class="flex flex-col">
-                        <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.audio">Generate
-                            Audio</label>
-                        <span class="text-[10px] text-md-sys-color-outline leading-tight">Sync audio (1.5 Pro
-                            only)</span>
-                    </div>
-                    <div
-                        class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                <div class="form-control">
+                    <label class="label py-0.5">
+                        <span class="label-text text-xs" data-i18n="sb.audio">Audio</span>
+                    </label>
+                    <label class="label cursor-pointer justify-start gap-2 bg-base-200 rounded-md px-2 h-8">
                         <input type="checkbox" name="generate_audio" id="edit-generate-audio" value="true"
-                            class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer border-md-sys-color-outline" />
-                        <label for="edit-generate-audio"
-                            class="toggle-label block overflow-hidden h-5 rounded-full bg-md-sys-color-surface-variant cursor-pointer border border-md-sys-color-outline"></label>
-                    </div>
+                            class="toggle toggle-primary toggle-sm">
+                        <span class="label-text text-xs">1.5 Pro</span>
+                    </label>
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-2 gap-2">
                 <!-- First Frame -->
-                <div>
-                    <label class="block text-sm font-medium text-md-sys-color-on-surface-variant mb-2"
-                        data-i18n="sb.first_frame">First Frame</label>
+                <div class="form-control">
+                    <label class="label py-0.5">
+                        <span class="label-text text-xs" data-i18n="sb.first_frame">First Frame</span>
+                    </label>
                     <input type="file" name="first_frame" accept="image/*"
-                        class="w-full text-sm text-md-sys-color-on-surface file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-md-sys-color-primary-container file:text-md-sys-color-on-primary-container hover:file:bg-md-sys-color-primary/20">
+                        class="file-input file-input-bordered file-input-sm w-full">
                 </div>
                 <!-- Last Frame -->
-                <div>
-                    <label class="block text-sm font-medium text-md-sys-color-on-surface-variant mb-2"
-                        data-i18n="sb.last_frame">Last Frame</label>
+                <div class="form-control">
+                    <label class="label py-0.5">
+                        <span class="label-text text-xs" data-i18n="sb.last_frame">Last Frame</span>
+                    </label>
                     <input type="file" name="last_frame" accept="image/*"
-                        class="w-full text-sm text-md-sys-color-on-surface file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-md-sys-color-primary-container file:text-md-sys-color-on-primary-container hover:file:bg-md-sys-color-primary/20">
+                        class="file-input file-input-bordered file-input-sm w-full">
                 </div>
             </div>
 
-            <div class="flex justify-end gap-2 pt-4">
-                <button type="button" onclick="document.getElementById('edit-dialog').close()" class="md3-btn-text"
-                    data-i18n="btn.cancel">Cancel</button>
-                <button type="submit" class="md3-btn-filled" data-i18n="sb.update_btn">Update</button>
+            <div class="modal-action">
+                <button type="button" onclick="document.getElementById('edit-dialog').close()"
+                    class="btn btn-ghost btn-sm" data-i18n="btn.cancel">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm" data-i18n="sb.update_btn">Update</button>
             </div>
         </form>
     </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
 </dialog>
 
 <script>
@@ -503,57 +464,50 @@
     ]);
     let pollInterval = null;
 
-    // UI Component Generators
+    // UI Component Generators (DaisyUI Compact)
     const UI = {
         runningConfig: () => `
-            <div class="text-white flex flex-col items-center">
-                <div class="w-12 h-12 border-4 border-md-sys-color-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-                <p class="font-medium tracking-wide">GENERATING SCENE...</p>
+            <div class="text-base-content flex flex-col items-center">
+                <span class="loading loading-spinner loading-md text-primary mb-3"></span>
+                <p class="text-sm font-medium">GENERATING...</p>
             </div>
         `,
-        succeededConfig: (videoUrl, lastFrameUrl, downloadVideoText, downloadFrameText, useLastFrameText) => `
-            <video controls class="w-full h-full max-h-[500px] object-contain" loop>
+        succeededConfig: (videoUrl, lastFrameUrl) => `
+            <video controls class="w-full h-full max-h-[400px] object-contain" loop>
                 <source src="${videoUrl}" type="video/mp4">
             </video>
-            <div class="absolute bottom-4 right-4 flex gap-2">
+            <div class="absolute bottom-3 right-3 flex gap-1">
                 ${lastFrameUrl ? `
-                <button type="button" onclick="useAsFirstFrame('${lastFrameUrl}')"
-                    class="bg-md-sys-color-tertiary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-tertiary/90 transition"
-                    title="${useLastFrameText || 'Use last frame'}">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24" fill="currentColor">
+                <button type="button" onclick="useAsFirstFrame('${lastFrameUrl}')" class="btn btn-accent btn-circle btn-sm" title="Use last frame">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
                         <path d="M440-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h160v80H280q-50 0-85 35t-35 85q0 50 35 85t85 35h160v80ZM320-440v-80h320v80H320Zm200 160v-80h160q50 0 85-35t35-85q0-50-35-85t-85-35H520v-80h160q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H520Z" />
                     </svg>
                 </button>
-                <a href="${lastFrameUrl}" download
-                    class="bg-md-sys-color-secondary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-secondary/90 transition"
-                    title="${downloadFrameText || 'Download frame'}">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24" fill="currentColor">
+                <a href="${lastFrameUrl}" download class="btn btn-secondary btn-circle btn-sm" title="Download frame">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
                          <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z" />
                     </svg>
                 </a>
                 ` : ''}
-                <a href="${videoUrl}" download
-                    class="bg-md-sys-color-primary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-primary/90 transition"
-                    title="${downloadVideoText || 'Download video'}">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24" fill="currentColor">
+                <a href="${videoUrl}" download class="btn btn-primary btn-circle btn-sm" title="Download video">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
                         <path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
                     </svg>
                 </a>
             </div>
         `,
         failedConfig: (id) => `
-            <div class="text-md-sys-color-error flex flex-col items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" height="48" viewBox="0 -960 960 960" width="48" fill="currentColor">
+            <div class="text-error flex flex-col items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" height="32" viewBox="0 -960 960 960" width="32" fill="currentColor">
                     <path d="M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z" />
                 </svg>
-                <p class="mt-2 font-bold" data-i18n="sb.failed">Generation Failed</p>
-                <form action="/takes/${id}/generate" method="POST" class="generate-form mt-4" data-id="${id}">
-                    <button type="submit"
-                        class="bg-md-sys-color-error text-white px-6 py-2 rounded-full font-medium shadow-md hover:shadow-lg hover:scale-105 transition transform flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20" fill="currentColor">
+                <p class="mt-1 text-sm font-bold">Failed</p>
+                <form action="/takes/${id}/generate" method="POST" class="generate-form mt-2" data-id="${id}">
+                    <button type="submit" class="btn btn-error btn-sm gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="14" viewBox="0 -960 960 960" width="14" fill="currentColor">
                             <path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z" />
                         </svg>
-                        <span data-i18n="sb.retry">Retry</span>
+                        <span>Retry</span>
                     </button>
                 </form>
             </div>
@@ -564,24 +518,13 @@
     function updateStatusBadge(id, status) {
         const badge = document.getElementById(`sb-status-${id}`);
         if (!badge) return;
-
         badge.textContent = status;
-        // Reset classes
-        badge.className = "px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide";
-
+        badge.className = "badge badge-sm";
         switch (status.toLowerCase()) {
-            case 'succeeded':
-                badge.classList.add('bg-green-100', 'text-green-800');
-                break;
-            case 'failed':
-                badge.classList.add('bg-red-100', 'text-red-800');
-                break;
-            case 'running':
-            case 'queued':
-                badge.classList.add('bg-blue-100', 'text-blue-800');
-                break;
-            default:
-                badge.classList.add('bg-gray-200', 'text-gray-700');
+            case 'succeeded': badge.classList.add('badge-success'); break;
+            case 'failed': badge.classList.add('badge-error'); break;
+            case 'running': case 'queued': badge.classList.add('badge-info'); break;
+            default: badge.classList.add('badge-ghost');
         }
     }
 
@@ -589,183 +532,60 @@
     function updateRightCol(id, data) {
         const col = document.getElementById(`sb-right-col-${id}`);
         if (!col) return;
-
         const status = data.status.toLowerCase();
         if (status === 'succeeded') {
-            col.innerHTML = UI.succeededConfig(
-                data.video_url,
-                data.last_frame_url,
-                'Download video',
-                'Download last frame',
-                'Use last frame as first frame'
-            );
+            col.innerHTML = UI.succeededConfig(data.video_url, data.last_frame_url);
         } else if (status === 'failed') {
             col.innerHTML = UI.failedConfig(id);
-            // Re-attach listener to new form
             const newForm = col.querySelector('.generate-form');
             if (newForm) attachSubmitListener(newForm);
         } else if (status === 'running' || status === 'queued') {
-            if (!col.innerHTML.includes('animate-spin')) {
-                col.innerHTML = UI.runningConfig();
-            }
+            if (!col.innerHTML.includes('loading')) col.innerHTML = UI.runningConfig();
         }
     }
 
     // Switch Take Tab
     async function switchTake(id, sbId, version) {
-        // Highlight active tab
         document.querySelectorAll(`.take-tab-${sbId}`).forEach(btn => {
-            const isTarget = btn.getAttribute('data-take-id') == id;
-            if (isTarget) {
-                btn.className = `take-tab-${sbId} px-4 py-2 text-sm font-medium rounded-t-lg transition border-b-2 text-md-sys-color-primary border-md-sys-color-primary bg-md-sys-color-surface-variant/20`;
-            } else {
-                btn.className = `take-tab-${sbId} px-4 py-2 text-sm font-medium rounded-t-lg transition border-b-2 text-md-sys-color-on-surface-variant/70 border-transparent hover:text-md-sys-color-on-surface-variant hover:bg-md-sys-color-surface-variant/10`;
-            }
+            btn.classList.toggle('tab-active', btn.getAttribute('data-take-id') == id);
         });
-
-        // Set Attribute for current version
         const contentDiv = document.getElementById(`take-content-${sbId}`);
         if (contentDiv) contentDiv.setAttribute('data-current-version', version);
-
-        // Fetch Take Data
         try {
             const res = await fetch(`/takes/${id}`);
             const take = await res.json();
             renderTakeContent(sbId, take, version);
-
-            // Manage polling
             if (take.status === 'Running' || take.status === 'Queued') {
                 activeTasks.add(take.id);
-                if (!window.isPolling) {
-                    startAdaptivePolling();
-                    window.isPolling = true;
-                }
+                if (!window.isPolling) { startAdaptivePolling(); window.isPolling = true; }
             }
-        } catch (e) {
-            console.error(e);
-            alert('Failed to switch take');
-        }
+        } catch (e) { console.error(e); alert('Failed to switch take'); }
     }
 
     // Render Take Content
     function renderTakeContent(sbId, take, version) {
         const contentDiv = document.getElementById(`take-content-${sbId}`);
         if (!contentDiv) return;
-
-        // If version is not provided (e.g. from polling update), try to read from attribute
-        if (!version) {
-            version = contentDiv.getAttribute('data-current-version') || '?';
-        }
-
-        // Update Header
-        const headerTitle = contentDiv.querySelector('.text-lg.font-medium');
-        if (headerTitle) {
-            headerTitle.innerHTML = `<span data-i18n="sb.scene">Version</span> ${version}`;
-        }
-
-        // Update Good Take Button
+        if (!version) version = contentDiv.getAttribute('data-current-version') || '?';
+        const headerTitle = contentDiv.querySelector('.text-sm.font-semibold');
+        if (headerTitle) headerTitle.innerHTML = `<span data-i18n="sb.scene">Version</span> ${version}`;
         const goodBtn = contentDiv.querySelector('button[onclick^="toggleGoodTake"]');
-        if (goodBtn) {
-            goodBtn.setAttribute('onclick', `toggleGoodTake(${take.id}, this)`);
-            updateGoodBtnStyle(goodBtn, take.is_good);
-        }
-
-        // Update Edit Button 
+        if (goodBtn) { goodBtn.setAttribute('onclick', `toggleGoodTake(${take.id}, this)`); updateGoodBtnStyle(goodBtn, take.is_good); }
         const editBtn = contentDiv.querySelector('button[onclick^="openEditDialog"]');
-        if (editBtn) {
-            editBtn.setAttribute('onclick', `openEditDialog(${take.storyboard_id}, '${take.prompt.replace(/'/g, "\\'")}', '${take.model_id}', '${take.ratio}', ${take.duration}, ${take.generate_audio}, '${take.service_tier}')`);
-        }
-
-        // Update Delete Button (Delete Take)
+        if (editBtn) editBtn.setAttribute('onclick', `openEditDialog(${take.storyboard_id}, '${take.prompt.replace(/'/g, "\\'")}', '${take.model_id}', '${take.ratio}', ${take.duration}, ${take.generate_audio}, '${take.service_tier}')`);
         const delBtn = contentDiv.querySelector('button[onclick^="deleteTake"]');
-        if (delBtn) {
-            delBtn.setAttribute('onclick', `deleteTake(${take.id})`);
-        }
-
-        // Update Status Badge
+        if (delBtn) delBtn.setAttribute('onclick', `deleteTake(${take.id})`);
         updateStatusBadge(take.id, take.status);
-
-        // Update Inputs
-        // Prompt
-        const promptP = contentDiv.querySelector('p.text-lg');
+        const promptP = contentDiv.querySelector('p.text-sm.leading-relaxed');
         if (promptP) promptP.textContent = take.prompt;
-
-        // Chips
-        const chips = contentDiv.querySelectorAll('.inline-flex');
-        if (chips.length >= 4) {
-            chips[0].textContent = take.model_id;
-            chips[1].textContent = take.service_tier === 'flex' ? 'Economic (Flex)' : 'Standard';
-            chips[2].textContent = take.ratio;
-            chips[3].textContent = take.duration + 's';
-        }
-
-        // Frames Images
-        const imgs = contentDiv.querySelectorAll('img');
-        const firstFrameContainer = contentDiv.querySelector('[data-i18n="sb.first_frame"]')?.nextElementSibling;
-        const lastFrameContainer = contentDiv.querySelector('[data-i18n="sb.last_frame"]')?.nextElementSibling;
-
-        // Helper to update image container
-        const updateImg = (container, path) => {
-            if (path) {
-                if (container) {
-                    container.innerHTML = `<img src="/${path}" class="w-full h-32 object-cover">`;
-                    container.parentElement.style.display = 'block';
-                }
-            } else {
-                if (container) {
-                    container.innerHTML = '';
-                    container.parentElement.style.display = 'none';
-                }
-            }
-        };
-
-        // We need to target specific containers accurately. 
-        // The structure is distinct enough: label + div > img
-        // Actually, the previous code had 'grid-cols-2'. 
-        // Let's rely on the structure we see in the template.
-        // Left column is inside `md:w-1/2 p-8 space-y-6`
-        const validImgs = contentDiv.querySelectorAll('.rounded-md3-md img');
-
-        // Re-rendering images is tricky if we don't have stable references. 
-        // Simplest strategy: Find the containers by their label proximity or just specific classes if we added them.
-        // We didn't add specific IDs to frame containers.
-        // Let's assume the order: First Frame, Last Frame.
-        // The template has conditional blocks for FirstFramePath and LastFramePath
-        // If we want to dynamically show/hide them, `renderTakeContent` needs to be robust. 
-        // For now, let's just reload the page if structure changes drastically? No, that defeats the purpose.
-        // Better: Update `updateRightCol` (Media Output) which is already dynamic. 
-        // For Left Col inputs (images), let's accept they might not update perfectly without IDs.
-        // Wait, `renderTakeContent` IS supposed to update the left column too.
-
-        // Let's improve the template to give IDs to frame containers in a future step if needed. 
-        // For now, let's just update the Media Output (Right Col)
+        const chips = contentDiv.querySelectorAll('.badge.badge-secondary');
+        if (chips.length >= 4) { chips[0].textContent = take.model_id; chips[1].textContent = take.service_tier === 'flex' ? 'Flex' : 'Standard'; chips[2].textContent = take.ratio; chips[3].textContent = take.duration + 's'; }
         updateRightCol(sbId, take);
-        const ffImg = contentDiv.querySelector('[data-i18n="sb.first_frame"] + div img');
-        if (ffImg && take.first_frame_path) {
-            ffImg.src = "/" + take.first_frame_path;
-            ffImg.parentElement.parentElement.style.display = 'block';
-        } else if (ffImg) {
-            ffImg.parentElement.parentElement.style.display = 'none';
-        }
-
-        // Last Frame
-        const lfImg = contentDiv.querySelector('[data-i18n="sb.last_frame"] + div img');
-        if (lfImg && take.last_frame_path) {
-            lfImg.src = "/" + take.last_frame_path;
-            lfImg.parentElement.parentElement.style.display = 'block';
-        } else if (lfImg) {
-            lfImg.parentElement.parentElement.style.display = 'none';
-        }
     }
 
     function updateGoodBtnStyle(btn, isGood) {
-        if (isGood) {
-            btn.classList.add('text-pink-500', 'bg-pink-100');
-            btn.classList.remove('text-gray-400', 'hover:text-pink-400');
-        } else {
-            btn.classList.remove('text-pink-500', 'bg-pink-100');
-            btn.classList.add('text-gray-400', 'hover:text-pink-400');
-        }
+        if (isGood) { btn.classList.add('text-pink-500'); btn.classList.remove('text-base-content/30'); }
+        else { btn.classList.remove('text-pink-500'); btn.classList.add('text-base-content/30'); }
     }
 
     async function toggleGoodTake(id, btn) {
@@ -773,228 +593,89 @@
             const res = await fetch(`/takes/${id}/toggle_good`, { method: 'POST' });
             const data = await res.json();
             updateGoodBtnStyle(btn, data.is_good);
-
-            // Update Tabs
             const contentDiv = btn.closest('.take-content');
             if (contentDiv) {
-                // Extract Storyboard ID from id="take-content-{SBID}"
-                const sbIdStr = contentDiv.id.replace('take-content-', '');
-                const sbId = parseInt(sbIdStr);
-
+                const sbId = parseInt(contentDiv.id.replace('take-content-', ''));
+                const allTabs = document.querySelectorAll(`.take-tab-${sbId}`);
+                allTabs.forEach(tab => { const h = tab.querySelector('span[title="Marked as Good Take"]'); if (h) h.remove(); });
                 if (data.is_good) {
-                    // Remove heart from ALL tabs for this storyboard
-                    const allTabs = document.querySelectorAll(`.take-tab-${sbId}`);
-                    allTabs.forEach(tab => {
-                        const heartSpan = tab.querySelector('span[title="Marked as Good Take"]');
-                        if (heartSpan) heartSpan.remove();
-                    });
-
-                    // Add heart to CURRENT tab
-                    // We need to find the specific tab for this take. 
-                    // The tabs have data-take-id attribute.
                     const currentTab = document.querySelector(`.take-tab-${sbId}[data-take-id="${id}"]`);
-                    if (currentTab) {
-                        const span = document.createElement('span');
-                        span.className = "ml-1";
-                        span.title = "Marked as Good Take";
-                        span.textContent = "🩷";
-                        currentTab.appendChild(span);
-                    }
-                } else {
-                    // Just remove heart from current tab
-                    const currentTab = document.querySelector(`.take-tab-${sbId}[data-take-id="${id}"]`);
-                    if (currentTab) {
-                        const heartSpan = currentTab.querySelector('span[title="Marked as Good Take"]');
-                        if (heartSpan) heartSpan.remove();
-                    }
+                    if (currentTab) { const span = document.createElement('span'); span.className = "ml-1"; span.title = "Marked as Good Take"; span.textContent = "🩷"; currentTab.appendChild(span); }
                 }
             }
-        } catch (e) {
-            console.error(e);
-        }
+        } catch (e) { console.error(e); }
     }
 
     async function deleteTake(id) {
         if (!confirm('Delete this take version?')) return;
-        try {
-            const res = await fetch(`/takes/delete/${id}`, { method: 'POST' });
-            if (res.ok) {
-                window.location.reload();
-            } else {
-                alert('Failed to delete take');
-            }
-        } catch (e) {
-            console.error(e);
-            alert('Error deleting take');
-        }
+        try { const res = await fetch(`/takes/delete/${id}`, { method: 'POST' }); if (res.ok) window.location.reload(); else alert('Failed to delete take'); }
+        catch (e) { console.error(e); alert('Error deleting take'); }
     }
 
-
-    // Adaptive Polling Logic with Recursive setTimeout
     async function startAdaptivePolling() {
-        if (activeTasks.size === 0) {
-            window.isPolling = false;
-            return;
-        }
-
-        let nextPollDelay = 3000; // Default minimum delay
-        let foundStandard = false;
-        let minReportedInterval = 999999;
-
+        if (activeTasks.size === 0) { window.isPolling = false; return; }
+        let nextPollDelay = 3000, minReportedInterval = 999999;
         const promises = Array.from(activeTasks).map(async (id) => {
             try {
                 const res = await fetch(`/takes/${id}/status`);
                 const data = await res.json();
-
-                if (data.status) {
-                    updateStatusBadge(id, data.status);
-                    updateRightCol(id, data);
-
-                    const s = data.status.toLowerCase();
-                    if (s === 'succeeded' || s === 'failed') {
-                        activeTasks.delete(id);
-                    }
-
-                    // Adaptive logic
-                    if (data.poll_interval) {
-                        minReportedInterval = Math.min(minReportedInterval, data.poll_interval);
-                    }
-                }
-            } catch (err) {
-                console.error('Poll failed for', id, err);
-            }
+                if (data.status) { updateStatusBadge(id, data.status); updateRightCol(id, data); const s = data.status.toLowerCase(); if (s === 'succeeded' || s === 'failed') activeTasks.delete(id); if (data.poll_interval) minReportedInterval = Math.min(minReportedInterval, data.poll_interval); }
+            } catch (err) { console.error('Poll failed for', id, err); }
         });
-
         await Promise.all(promises);
-
-        // Determine next poll time
-        if (minReportedInterval < 999999) {
-            nextPollDelay = minReportedInterval;
-        } else {
-            // Fallback if server didn't send interval
-            nextPollDelay = 3000;
-        }
-
-        // Ensure we don't hammer the server if it returns crazy small value
+        if (minReportedInterval < 999999) nextPollDelay = minReportedInterval; else nextPollDelay = 3000;
         if (nextPollDelay < 1000) nextPollDelay = 1000;
-
-        if (activeTasks.size > 0) {
-            setTimeout(startAdaptivePolling, nextPollDelay);
-        }
+        if (activeTasks.size > 0) setTimeout(startAdaptivePolling, nextPollDelay);
     }
 
-    // Handle Generate Submit
     function attachSubmitListener(form) {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = form.querySelector('button');
             const originalContent = btn.innerHTML;
             const id = parseInt(form.dataset.id);
-
-            // Optimistic UI update
             btn.disabled = true;
-            btn.innerHTML = `
-                <div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                Starting...
-            `;
-
+            btn.innerHTML = `<span class="loading loading-spinner loading-xs mr-1"></span>Starting...`;
             try {
                 const resp = await fetch(form.action, { method: 'POST' });
-                if (resp.ok) {
-                    // Update UI to Running state immediately
-                    updateStatusBadge(id, "Running");
-
-                    const col = document.getElementById(`sb-right-col-${id}`);
-                    if (col) col.innerHTML = UI.runningConfig();
-
-                    // Start polling
-                    activeTasks.add(id);
-                    if (!window.isPolling) {
-                        startAdaptivePolling();
-                        window.isPolling = true;
-                    }
-
-                } else {
-                    const errData = await resp.json().catch(() => ({}));
-                    alert('Failed to start generation: ' + (errData.error || 'Unknown error'));
-                    btn.disabled = false;
-                    btn.innerHTML = originalContent;
-                }
-            } catch (err) {
-                console.error(err);
-                alert('Network error');
-                btn.disabled = false;
-                btn.innerHTML = originalContent;
-            }
+                if (resp.ok) { updateStatusBadge(id, "Running"); const col = document.getElementById(`sb-right-col-${id}`); if (col) col.innerHTML = UI.runningConfig(); activeTasks.add(id); if (!window.isPolling) { startAdaptivePolling(); window.isPolling = true; } }
+                else { const errData = await resp.json().catch(() => ({})); alert('Failed to start generation: ' + (errData.error || 'Unknown error')); btn.disabled = false; btn.innerHTML = originalContent; }
+            } catch (err) { console.error(err); alert('Network error'); btn.disabled = false; btn.innerHTML = originalContent; }
         });
     }
 
-    // Initialize
     document.addEventListener('DOMContentLoaded', () => {
-        // Drag Drop (existing)
         setupDragDrop('drop-first-frame', 'input-first-frame');
         setupDragDrop('drop-last-frame', 'input-last-frame');
-
-        // Attach listeners to existing forms
         document.querySelectorAll('.generate-form').forEach(attachSubmitListener);
-
-        // Resume polling if needed
-        if (activeTasks.size > 0) {
-            startAdaptivePolling();
-            window.isPolling = true;
-        }
-
-        // Initialize Audio Toggle Logic
+        if (activeTasks.size > 0) { startAdaptivePolling(); window.isPolling = true; }
         const newModelSelect = document.querySelector('form[action*="/storyboards"] select[name="model_id"]');
         const newAudioCheck = document.getElementById('new-generate-audio');
-        if (newModelSelect && newAudioCheck) {
-            newModelSelect.addEventListener('change', () => toggleAudioCheckbox(newModelSelect, newAudioCheck));
-            toggleAudioCheckbox(newModelSelect, newAudioCheck);
-        }
-
+        if (newModelSelect && newAudioCheck) { newModelSelect.addEventListener('change', () => toggleAudioCheckbox(newModelSelect, newAudioCheck)); toggleAudioCheckbox(newModelSelect, newAudioCheck); }
         const editModelSelect = document.getElementById('edit-model');
         const editAudioCheck = document.getElementById('edit-generate-audio');
-        if (editModelSelect && editAudioCheck) {
-            editModelSelect.addEventListener('change', () => toggleAudioCheckbox(editModelSelect, editAudioCheck));
-        }
+        if (editModelSelect && editAudioCheck) editModelSelect.addEventListener('change', () => toggleAudioCheckbox(editModelSelect, editAudioCheck));
     });
 
     function toggleAudioCheckbox(modelSelect, audioCheckbox) {
         const is15Pro = modelSelect.value === 'doubao-seedance-1-5-pro-251215';
         audioCheckbox.disabled = !is15Pro;
-        if (!is15Pro) {
-            audioCheckbox.checked = false;
-            audioCheckbox.parentElement.classList.add('opacity-50', 'cursor-not-allowed');
-        } else {
-            audioCheckbox.parentElement.classList.remove('opacity-50', 'cursor-not-allowed');
-        }
+        if (!is15Pro) { audioCheckbox.checked = false; audioCheckbox.parentElement.classList.add('opacity-50', 'cursor-not-allowed'); }
+        else audioCheckbox.parentElement.classList.remove('opacity-50', 'cursor-not-allowed');
     }
 
-    // ... (Keep existing Helper functions like openEditDialog, useAsFirstFrame, setupDragDrop) ...
-    // Open Edit Dialog with pre-populated values (Updated action to use storyboard ID for Creating NEW take)
     function openEditDialog(id, prompt, modelId, ratio, duration, generateAudio, serviceTier) {
         const dialog = document.getElementById('edit-dialog');
         const form = document.getElementById('edit-form');
-        // UPDATE: The Edit dialog now Creates a NEW TAKE. So action is /storyboards/{id}/update (based on Storyboard ID).
         form.action = `/storyboards/${id}/update`;
         document.getElementById('edit-prompt').value = prompt;
         document.getElementById('edit-model').value = modelId;
         document.getElementById('edit-ratio').value = ratio;
         document.getElementById('edit-duration').value = duration.toString();
-
         const stSelect = document.getElementById('edit-service-tier');
-        if (stSelect && serviceTier) {
-            stSelect.value = serviceTier;
-        } else if (stSelect) {
-            stSelect.value = 'standard';
-        }
-
+        if (stSelect && serviceTier) stSelect.value = serviceTier; else if (stSelect) stSelect.value = 'standard';
         const audioCheckbox = document.getElementById('edit-generate-audio');
-        if (audioCheckbox) {
-            audioCheckbox.checked = generateAudio === true || generateAudio === "true";
-            toggleAudioCheckbox(document.getElementById('edit-model'), audioCheckbox);
-        }
-
+        if (audioCheckbox) { audioCheckbox.checked = generateAudio === true || generateAudio === "true"; toggleAudioCheckbox(document.getElementById('edit-model'), audioCheckbox); }
         dialog.showModal();
     }
 
@@ -1002,77 +683,39 @@
         try {
             const response = await fetch(imageUrl);
             const blob = await response.blob();
-            const filename = 'last_frame_' + Date.now() + '.png';
-            const file = new File([blob], filename, { type: blob.type || 'image/png' });
+            const file = new File([blob], 'last_frame_' + Date.now() + '.png', { type: blob.type || 'image/png' });
             const input = document.getElementById('input-first-frame');
             const dataTransfer = new DataTransfer();
             dataTransfer.items.add(file);
             input.files = dataTransfer.files;
-
             const dropZone = document.getElementById('drop-first-frame');
             const placeholder = dropZone.querySelector('.upload-placeholder');
             const preview = dropZone.querySelector('.preview-img');
             preview.src = imageUrl;
             preview.classList.remove('hidden');
             placeholder.classList.add('hidden');
-            document.querySelector('.mt-16').scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-            dropZone.classList.add('ring-4', 'ring-md-sys-color-primary');
-            setTimeout(() => dropZone.classList.remove('ring-4', 'ring-md-sys-color-primary'), 1500);
-        } catch (err) {
-            console.error('Failed to set first frame:', err);
-            alert('Failed to load the last frame image');
-        }
+            document.querySelector('.mt-10').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            dropZone.classList.add('ring-2', 'ring-primary');
+            setTimeout(() => dropZone.classList.remove('ring-2', 'ring-primary'), 1500);
+        } catch (err) { console.error('Failed to set first frame:', err); alert('Failed to load the last frame image'); }
     }
 
     function setupDragDrop(dropZoneId, inputId) {
         const dropZone = document.getElementById(dropZoneId);
         const input = document.getElementById(inputId);
         if (!dropZone || !input) return;
-
         const placeholder = dropZone.querySelector('.upload-placeholder');
         const preview = dropZone.querySelector('.preview-img');
-
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); });
-        });
-
-        ['dragenter', 'dragover'].forEach(eventName => {
-            dropZone.addEventListener(eventName, () => {
-                dropZone.classList.add('border-md-sys-color-primary', 'bg-md-sys-color-primary/10');
-                dropZone.classList.remove('border-md-sys-color-outline');
-            });
-        });
-
-        ['dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, () => {
-                dropZone.classList.remove('border-md-sys-color-primary', 'bg-md-sys-color-primary/10');
-                dropZone.classList.add('border-md-sys-color-outline');
-            });
-        });
-
-        dropZone.addEventListener('drop', (e) => {
-            const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].type.startsWith('image/')) {
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(files[0]);
-                input.files = dataTransfer.files;
-                showPreview(files[0], placeholder, preview);
-            }
-        });
-
-        input.addEventListener('change', () => {
-            if (input.files.length > 0) showPreview(input.files[0], placeholder, preview);
-        });
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => { dropZone.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); }); });
+        ['dragenter', 'dragover'].forEach(eventName => { dropZone.addEventListener(eventName, () => { dropZone.classList.add('border-primary', 'bg-primary/10'); dropZone.classList.remove('border-base-content/20'); }); });
+        ['dragleave', 'drop'].forEach(eventName => { dropZone.addEventListener(eventName, () => { dropZone.classList.remove('border-primary', 'bg-primary/10'); dropZone.classList.add('border-base-content/20'); }); });
+        dropZone.addEventListener('drop', (e) => { const files = e.dataTransfer.files; if (files.length > 0 && files[0].type.startsWith('image/')) { const dataTransfer = new DataTransfer(); dataTransfer.items.add(files[0]); input.files = dataTransfer.files; showPreview(files[0], placeholder, preview); } });
+        input.addEventListener('change', () => { if (input.files.length > 0) showPreview(input.files[0], placeholder, preview); });
     }
 
     function showPreview(file, placeholder, preview) {
         const reader = new FileReader();
-        reader.onload = (e) => {
-            preview.src = e.target.result;
-            preview.classList.remove('hidden');
-            placeholder.classList.add('hidden');
-        };
+        reader.onload = (e) => { preview.src = e.target.result; preview.classList.remove('hidden'); placeholder.classList.add('hidden'); };
         reader.readAsDataURL(file);
     }
 </script>
