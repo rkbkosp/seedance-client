@@ -28,6 +28,7 @@ type Storyboard struct {
 	VideoURL       string    `json:"video_url"`        // Result URL
 	LastFrameURL   string    `json:"last_frame_url"`   // Result Last Frame URL
 	ServiceTier    string    `json:"service_tier"`     // "standard" or "flex"
+	TokenUsage     int       `json:"token_usage"`      // Usage.CompletionTokens
 	ExpiresAfter   int64     `json:"expires_after"`
 	CreatedAt      time.Time `json:"created_at"`
 }

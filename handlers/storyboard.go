@@ -195,6 +195,8 @@ func GetStoryboardStatus(c *gin.Context) {
 		if resp.Content.LastFrameURL != "" {
 			sb.LastFrameURL = resp.Content.LastFrameURL
 		}
+		// Capture Token Usage
+		sb.TokenUsage = resp.Usage.CompletionTokens
 	}
 
 	models.DB.Save(&sb)

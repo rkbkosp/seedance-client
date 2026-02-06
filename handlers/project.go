@@ -11,8 +11,78 @@ import (
 func ListProjects(c *gin.Context) {
 	var projects []models.Project
 	models.DB.Order("created_at desc").Find(&projects)
+
+	// Calculate Global Stats
+	var storyboards []models.Storyboard
+	models.DB.Where("status = ?", "Succeeded").Find(&storyboards)
+
+	var stats struct {
+		TotalVideos       int
+		TotalVideos15Pro  int
+		TotalVideos10Fast int
+		TotalTokenUsage   int
+		TotalCost         float64
+		TotalSavings      float64
+	}
+
+	stats.TotalVideos = len(storyboards)
+
+	for _, sb := range storyboards {
+		// Count by Model
+		is15Pro := sb.ModelID == "doubao-seedance-1-5-pro-251215"
+		if is15Pro {
+			stats.TotalVideos15Pro++
+		} else {
+			stats.TotalVideos10Fast++
+		}
+
+		// Token Usage
+		stats.TotalTokenUsage += sb.TokenUsage
+
+		// Calculate Cost
+		var pricePerMillion float64
+
+		// Determine Price based on Model, Audio, and Tier
+		if is15Pro {
+			// 1.5 Pro
+			if sb.GenerateAudio {
+				if sb.ServiceTier == "flex" {
+					pricePerMillion = 8.0
+				} else {
+					pricePerMillion = 16.0
+				}
+			} else { // Silent
+				if sb.ServiceTier == "flex" {
+					pricePerMillion = 4.0
+				} else {
+					pricePerMillion = 8.0
+				}
+			}
+		} else {
+			// 1.0 Pro Fast
+			if sb.ServiceTier == "flex" {
+				pricePerMillion = 2.1
+			} else {
+				pricePerMillion = 4.2
+			}
+		}
+
+		cost := (float64(sb.TokenUsage) / 1000000.0) * pricePerMillion
+		stats.TotalCost += cost
+
+		// Calculate Savings
+		var platformPrice float64
+		if is15Pro {
+			platformPrice = 2.56
+		} else {
+			platformPrice = 0.64
+		}
+		stats.TotalSavings += (platformPrice - cost)
+	}
+
 	c.HTML(http.StatusOK, "projects.html", gin.H{
 		"Projects": projects,
+		"Stats":    stats,
 	})
 }
 

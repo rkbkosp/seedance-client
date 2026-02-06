@@ -57,5 +57,40 @@
     </div>
     {{ end }}
 </div>
+<div class="mt-12 bg-md-sys-color-surface rounded-md3-xl shadow-lg border border-md-sys-color-outline/10 p-8">
+    <h2 class="text-2xl font-normal text-md-sys-color-on-surface mb-6">Data Monitoring</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Total Videos -->
+        <div class="bg-md-sys-color-surface-variant/30 rounded-lg p-6">
+            <h3 class="text-sm font-bold text-md-sys-color-primary mb-2 uppercase tracking-wide">Total Videos</h3>
+            <p class="text-3xl font-normal text-md-sys-color-on-surface">{{ .Stats.TotalVideos }}</p>
+            <div class="mt-2 text-xs text-md-sys-color-on-surface-variant">
+                <div>1.5 Pro: <span class="font-medium">{{ .Stats.TotalVideos15Pro }}</span></div>
+                <div>1.0 Pro Fast: <span class="font-medium">{{ .Stats.TotalVideos10Fast }}</span></div>
+            </div>
+        </div>
+
+        <!-- Token Usage -->
+        <div class="bg-md-sys-color-surface-variant/30 rounded-lg p-6">
+            <h3 class="text-sm font-bold text-md-sys-color-primary mb-2 uppercase tracking-wide">Total Tokens</h3>
+            <p class="text-3xl font-normal text-md-sys-color-on-surface">{{ .Stats.TotalTokenUsage }}</p>
+            <p class="mt-2 text-xs text-md-sys-color-on-surface-variant">Output Tokens</p>
+        </div>
+
+        <!-- Total Cost -->
+        <div class="bg-md-sys-color-surface-variant/30 rounded-lg p-6">
+            <h3 class="text-sm font-bold text-md-sys-color-primary mb-2 uppercase tracking-wide">Total Cost</h3>
+            <p class="text-3xl font-normal text-md-sys-color-on-surface">¥{{ printf "%.4f" .Stats.TotalCost }}</p>
+            <p class="mt-2 text-xs text-md-sys-color-on-surface-variant">Estimated</p>
+        </div>
+
+        <!-- Total Savings -->
+        <div class="bg-green-50 rounded-lg p-6 border border-green-100">
+            <h3 class="text-sm font-bold text-green-700 mb-2 uppercase tracking-wide">Total Savings</h3>
+            <p class="text-3xl font-normal text-green-800">¥{{ printf "%.4f" .Stats.TotalSavings }}</p>
+            <p class="mt-2 text-xs text-green-600">vs Platform Price</p>
+        </div>
+    </div>
+</div>
 
 {{ template "footer" . }}
