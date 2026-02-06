@@ -22,6 +22,7 @@ type Storyboard struct {
 	ModelID        string    `json:"model_id"`         // e.g. "doubao-seedance-1-5-pro-251215"
 	Ratio          string    `json:"ratio"`            // "16:9", "adaptive"
 	Duration       int       `json:"duration"`         // 5
+	GenerateAudio  bool      `json:"generate_audio"`   // false
 	TaskID         string    `json:"task_id"`          // Volcano Task ID
 	Status         string    `json:"status"`           // Queued, Running, Succeeded, Failed
 	VideoURL       string    `json:"video_url"`        // Result URL

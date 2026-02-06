@@ -29,7 +29,7 @@ func (s *VolcEngineService) SetAPIKey(apiKey string) {
 	)
 }
 
-func (s *VolcEngineService) CreateVideoTask(modelID string, prompt string, firstFrameURL string, lastFrameURL string, ratio string, duration int) (string, error) {
+func (s *VolcEngineService) CreateVideoTask(modelID string, prompt string, firstFrameURL string, lastFrameURL string, ratio string, duration int, generateAudio bool) (string, error) {
 	ctx := context.Background()
 
 	contentItems := []*model.CreateContentGenerationContentItem{
@@ -64,6 +64,7 @@ func (s *VolcEngineService) CreateVideoTask(modelID string, prompt string, first
 		Content:         contentItems,
 		Watermark:       volcengine.Bool(false),
 		ReturnLastFrame: volcengine.Bool(true),
+		GenerateAudio:   volcengine.Bool(generateAudio),
 	}
 
 	// Handle Ratio

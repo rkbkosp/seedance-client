@@ -50,7 +50,7 @@
             <div class="flex items-center gap-2">
                 <!-- Edit Button -->
                 <button type="button"
-                    onclick="openEditDialog({{ .ID }}, '{{ .Prompt }}', '{{ .ModelID }}', '{{ .Ratio }}', {{ .Duration }})"
+                    onclick="openEditDialog({{ .ID }}, '{{ .Prompt }}', '{{ .ModelID }}', '{{ .Ratio }}', {{ .Duration }}, {{ .GenerateAudio }})"
                     class="text-md-sys-color-primary hover:bg-md-sys-color-primary/10 p-2 rounded-full transition"
                     title="Edit">
                     <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
@@ -303,6 +303,21 @@
                     <option value="10">10s</option>
                 </select>
             </div>
+            <!-- Generate Audio Checkbox -->
+            <div
+                class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2 flex items-center justify-between">
+                <div class="flex flex-col">
+                    <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.audio">Generate
+                        Audio</label>
+                    <span class="text-[10px] text-md-sys-color-outline leading-tight">Sync audio (1.5 Pro only)</span>
+                </div>
+                <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                    <input type="checkbox" name="generate_audio" id="new-generate-audio" value="true"
+                        class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer border-md-sys-color-outline" />
+                    <label for="new-generate-audio"
+                        class="toggle-label block overflow-hidden h-5 rounded-full bg-md-sys-color-surface-variant cursor-pointer border border-md-sys-color-outline"></label>
+                </div>
+            </div>
         </div>
 
         <div class="pt-6 flex justify-end">
@@ -361,6 +376,23 @@
                         <option value="5">5s</option>
                         <option value="10">10s</option>
                     </select>
+                </div>
+                <!-- Generate Audio -->
+                <div
+                    class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2 flex items-center justify-between">
+                    <div class="flex flex-col">
+                        <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.audio">Generate
+                            Audio</label>
+                        <span class="text-[10px] text-md-sys-color-outline leading-tight">Sync audio (1.5 Pro
+                            only)</span>
+                    </div>
+                    <div
+                        class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                        <input type="checkbox" name="generate_audio" id="edit-generate-audio" value="true"
+                            class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer border-md-sys-color-outline" />
+                        <label for="edit-generate-audio"
+                            class="toggle-label block overflow-hidden h-5 rounded-full bg-md-sys-color-surface-variant cursor-pointer border border-md-sys-color-outline"></label>
+                    </div>
                 </div>
             </div>
 
@@ -498,7 +530,7 @@
         } else if (status === 'failed') {
             col.innerHTML = UI.failedConfig(id);
             // Re-attach listener to new form
-            const newForm = col.querySelector('.generate-form');
+            const newForm = col.querySelector ('.generate-form');
             if (newForm) attachSubmitListener(newForm);
         } else if (status === 'running' || status === 'queued') {
             if (!col.innerHTML.includes('animate-spin')) {
@@ -533,7 +565,7 @@
                         }
                     }
                 } catch (err) {
-                    console.error('Poll failed for', id, err);
+                    console.error ('Poll failed for', id, err);
                 }
             }
         }, 3000); // 3s interval
@@ -543,7 +575,7 @@
     function attachSubmitListener(form) {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const btn = form.querySelector('button');
+            const btn = form.querySelector ('button');
             const originalContent = btn.innerHTML;
             const id = parseInt(form.dataset.id);
 
@@ -574,7 +606,7 @@
                     btn.innerHTML = originalContent;
                 }
             } catch (err) {
-                console.error(err);
+                console.error (err);
                 alert('Network error');
                 btn.disabled = false;
                 btn.innerHTML = originalContent;
@@ -595,11 +627,41 @@
         if (activeTasks.size > 0) {
             startPolling();
         }
+
+        // Initialize Audio Toggle Logic
+        initAudioToggle('model_id', 'new-generate-audio'); // For New Form (name=model_id) - wait, selector for new form is specific
+        // Actually we need to select precise elements.
+        // New Form: select[name="model_id"] inside .space-y-8
+        // But simpler:
+        const newModelSelect = document.querySelector ('form[action*="/storyboards"] select[name="model_id"]');
+        const newAudioCheck = document.getElementById('new-generate-audio');
+        if (newModelSelect && newAudioCheck) {
+            newModelSelect.addEventListener('change', () => toggleAudioCheckbox(newModelSelect, newAudioCheck));
+            toggleAudioCheckbox(newModelSelect, newAudioCheck);
+        }
+
+        const editModelSelect = document.getElementById('edit-model');
+        const editAudioCheck = document.getElementById('edit-generate-audio');
+        if (editModelSelect && editAudioCheck) {
+            editModelSelect.addEventListener('change', () => toggleAudioCheckbox(editModelSelect, editAudioCheck));
+            // Initial state set in openEditDialog
+        }
     });
+
+    function toggleAudioCheckbox(modelSelect, audioCheckbox) {
+        const is15Pro = modelSelect.value === 'doubao-seedance-1-5-pro-251215';
+        audioCheckbox.disabled = !is15Pro;
+        if (!is15Pro) {
+            audioCheckbox.checked = false;
+            audioCheckbox.parentElement.classList.add('opacity-50', 'cursor-not-allowed');
+        } else {
+            audioCheckbox.parentElement.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    }
 
     // ... (Keep existing Helper functions like openEditDialog, useAsFirstFrame, setupDragDrop) ...
     // Open Edit Dialog with pre-populated values
-    function openEditDialog(id, prompt, modelId, ratio, duration) {
+    function openEditDialog(id, prompt, modelId, ratio, duration, generateAudio) {
         const dialog = document.getElementById('edit-dialog');
         const form = document.getElementById('edit-form');
         form.action = `/storyboards/${id}/update`;
@@ -607,6 +669,13 @@
         document.getElementById('edit-model').value = modelId;
         document.getElementById('edit-ratio').value = ratio;
         document.getElementById('edit-duration').value = duration.toString();
+
+        const audioCheckbox = document.getElementById('edit-generate-audio');
+        if (audioCheckbox) {
+            audioCheckbox.checked = generateAudio === true || generateAudio === "true";
+            toggleAudioCheckbox(document.getElementById('edit-model'), audioCheckbox);
+        }
+
         dialog.showModal();
     }
 
@@ -622,17 +691,17 @@
             input.files = dataTransfer.files;
 
             const dropZone = document.getElementById('drop-first-frame');
-            const placeholder = dropZone.querySelector('.upload-placeholder');
-            const preview = dropZone.querySelector('.preview-img');
+            const placeholder = dropZone.querySelector ('.upload-placeholder');
+            const preview = dropZone.querySelector ('.preview-img');
             preview.src = imageUrl;
             preview.classList.remove('hidden');
             placeholder.classList.add('hidden');
-            document.querySelector('.mt-16').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            document.querySelector ('.mt-16').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
             dropZone.classList.add('ring-4', 'ring-md-sys-color-primary');
             setTimeout(() => dropZone.classList.remove('ring-4', 'ring-md-sys-color-primary'), 1500);
         } catch (err) {
-            console.error('Failed to set first frame:', err);
+            console.error ('Failed to set first frame:', err);
             alert('Failed to load the last frame image');
         }
     }
@@ -642,8 +711,8 @@
         const input = document.getElementById(inputId);
         if (!dropZone || !input) return;
 
-        const placeholder = dropZone.querySelector('.upload-placeholder');
-        const preview = dropZone.querySelector('.preview-img');
+        const placeholder = dropZone.querySelector ('.upload-placeholder');
+        const preview = dropZone.querySelector ('.preview-img');
 
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); });

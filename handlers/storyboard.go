@@ -38,14 +38,16 @@ func CreateStoryboard(c *gin.Context) {
 	ratio := c.PostForm("ratio")
 	durationStr := c.PostForm("duration")
 	duration, _ := strconv.Atoi(durationStr)
+	generateAudio := c.PostForm("generate_audio") == "true"
 
 	storyboard := models.Storyboard{
-		ProjectID: uint(projectID),
-		Prompt:    prompt,
-		ModelID:   modelID,
-		Ratio:     ratio,
-		Duration:  duration,
-		Status:    "Draft",
+		ProjectID:     uint(projectID),
+		Prompt:        prompt,
+		ModelID:       modelID,
+		Ratio:         ratio,
+		Duration:      duration,
+		GenerateAudio: generateAudio,
+		Status:        "Draft",
 	}
 
 	// Handle File Uploads
@@ -110,7 +112,7 @@ func GenerateVideo(c *gin.Context) {
 		lastFrameURL = b64
 	}
 
-	taskID, err := volcService.CreateVideoTask(sb.ModelID, sb.Prompt, firstFrameURL, lastFrameURL, sb.Ratio, sb.Duration)
+	taskID, err := volcService.CreateVideoTask(sb.ModelID, sb.Prompt, firstFrameURL, lastFrameURL, sb.Ratio, sb.Duration, sb.GenerateAudio)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		sb.Status = "Failed"
@@ -236,6 +238,11 @@ func UpdateStoryboard(c *gin.Context) {
 	if durationStr != "" {
 		duration, _ := strconv.Atoi(durationStr)
 		sb.Duration = duration
+	}
+
+	generateAudioStr := c.PostForm("generate_audio")
+	if generateAudioStr != "" {
+		sb.GenerateAudio = generateAudioStr == "true"
 	}
 
 	// Handle optional file uploads
