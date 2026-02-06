@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"seedance-client/models"
+	"seedance-client/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -69,5 +70,34 @@ func LoadAPIKeyFromCookie() gin.HandlerFunc {
 			volcService.SetAPIKey(apiKey)
 		}
 		c.Next()
+	}
+}
+
+// ExportProject exports all succeeded storyboard videos as a ZIP bundle with FCPXML
+func ExportProject(c *gin.Context) {
+	id := c.Param("id")
+	var project models.Project
+	if err := models.DB.Preload("Storyboards").First(&project, id).Error; err != nil {
+		c.String(404, "Project not found")
+		return
+	}
+
+	// Generate export data
+	exports := services.PrepareExportData(project.Storyboards)
+	if len(exports) == 0 {
+		c.String(400, "No succeeded videos available for export")
+		return
+	}
+
+	// Set headers for file download
+	filename := services.GetExportFilename(project.Name)
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", "attachment; filename=\""+filename+"\"")
+
+	// Stream ZIP directly to response
+	if err := services.CreateExportZIP(c.Writer, project.Name, exports); err != nil {
+		// Log error - headers already sent so can't change response
+		c.Error(err)
+		return
 	}
 }

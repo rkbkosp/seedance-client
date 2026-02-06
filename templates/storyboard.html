@@ -12,8 +12,21 @@
 </div>
 
 <div class="mb-10 p-6 bg-md-sys-color-surface-variant rounded-md3-xl">
-    <h1 class="text-4xl font-normal text-md-sys-color-on-surface-variant mb-2">{{ .Project.Name }}</h1>
-    <p class="text-md-sys-color-on-surface-variant opacity-80">Campaign ID: {{ .Project.ID }}</p>
+    <div class="flex justify-between items-start">
+        <div>
+            <h1 class="text-4xl font-normal text-md-sys-color-on-surface-variant mb-2">{{ .Project.Name }}</h1>
+            <p class="text-md-sys-color-on-surface-variant opacity-80">Campaign ID: {{ .Project.ID }}</p>
+        </div>
+        <a href="/projects/{{ .Project.ID }}/export"
+            class="md3-btn-filled flex items-center gap-2 px-5 py-3 rounded-full shadow-lg hover:shadow-xl transition transform hover:-translate-y-0.5"
+            title="Export all succeeded videos as ZIP with FCPXML">
+            <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20" fill="currentColor">
+                <path
+                    d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
+            </svg>
+            <span data-i18n="sb.export">Export Bundle</span>
+        </a>
+    </div>
 </div>
 
 <!-- Storyboard List -->
@@ -531,8 +544,8 @@
     // Simple Polling for Running/Queued tasks
     const runningTasks = [
         {{ range .Project.Storyboards }}
-        {{ if or (eq .Status "Running") (eq .Status "Queued") (eq .Status "running") (eq .Status "queued") }}{{ .ID }},{{ end }}
-        {{ end }}
+    {{ if or (eq .Status "Running") (eq .Status "Queued") (eq .Status "running") (eq .Status "queued") }} {{ .ID }}, {{ end }}
+    {{ end }}
     ].filter(id => id != null);
 
     if (runningTasks.length > 0) {

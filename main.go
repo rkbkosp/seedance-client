@@ -33,6 +33,7 @@ func main() {
 	r.POST("/projects", handlers.CreateProject)
 	r.POST("/projects/delete/:id", handlers.DeleteProject)
 	r.GET("/projects/:id", handlers.GetProject)
+	r.GET("/projects/:id/export", handlers.ExportProject)
 	r.POST("/settings/apikey", handlers.UpdateAPIKey)
 
 	// Storyboard Routes
