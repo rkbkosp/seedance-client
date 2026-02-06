@@ -47,6 +47,8 @@ go build -o seedance-client .
 
 ```
 
+或者前往 Releases 页面下载编译好的二进制文件，解压并运行。
+
 ### 访问
 
 打开浏览器访问 [http://localhost:23313](https://www.google.com/search?q=http://localhost:23313)
