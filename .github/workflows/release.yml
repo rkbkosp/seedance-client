@@ -32,7 +32,7 @@ jobs:
             archive_name: seedance-client-windows-amd64.zip
             asset_path: seedance-client-windows-amd64.zip
 
-          # macOS (Apple Silicon - M1/M2/M3)
+          # macOS (Apple Silicon - M1/M2/M3) - 目前 macos-latest 默认为 arm64
           - os: macos-latest
             goos: darwin
             goarch: arm64
@@ -40,8 +40,8 @@ jobs:
             archive_name: seedance-client-macos-arm64.tar.gz
             asset_path: seedance-client-macos-arm64.tar.gz
             
-          # macOS (Intel)
-          - os: macos-13 # 使用旧版 macOS runner 以兼容 Intel
+          # macOS (Intel) - 必须使用专门的 macos-15-intel 标签
+          - os: macos-15-intel # 更新：使用 macos-15-intel 替代已弃用的 macos-13
             goos: darwin
             goarch: amd64
             output_name: seedance-client-macos-amd64
@@ -55,7 +55,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23' # 建议使用最新稳定版
+          go-version: '1.25' # 您的 go.mod 指定了 go 1.25.6
           check-latest: true
 
       - name: Build Binary
