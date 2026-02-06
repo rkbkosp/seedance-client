@@ -27,6 +27,8 @@ type Storyboard struct {
 	Status         string    `json:"status"`           // Queued, Running, Succeeded, Failed
 	VideoURL       string    `json:"video_url"`        // Result URL
 	LastFrameURL   string    `json:"last_frame_url"`   // Result Last Frame URL
+	ServiceTier    string    `json:"service_tier"`     // "standard" or "flex"
+	ExpiresAfter   int64     `json:"expires_after"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 

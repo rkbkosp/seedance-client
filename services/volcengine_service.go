@@ -29,7 +29,7 @@ func (s *VolcEngineService) SetAPIKey(apiKey string) {
 	)
 }
 
-func (s *VolcEngineService) CreateVideoTask(modelID string, prompt string, firstFrameURL string, lastFrameURL string, ratio string, duration int, generateAudio bool) (string, error) {
+func (s *VolcEngineService) CreateVideoTask(modelID string, prompt string, firstFrameURL string, lastFrameURL string, ratio string, duration int, generateAudio bool, serviceTier string, expiresAfter int64) (string, error) {
 	ctx := context.Background()
 
 	contentItems := []*model.CreateContentGenerationContentItem{
@@ -77,6 +77,19 @@ func (s *VolcEngineService) CreateVideoTask(modelID string, prompt string, first
 	// Handle Duration
 	if duration > 0 {
 		req.Duration = volcengine.Int64(int64(duration))
+	}
+
+	// Handle Service Tier
+	if serviceTier == "flex" {
+		req.ServiceTier = volcengine.String("flex")
+		// Use provided expiresAfter or default to 86400 (24h)
+		if expiresAfter > 0 {
+			req.ExecutionExpiresAfter = volcengine.Int64(expiresAfter)
+		} else {
+			req.ExecutionExpiresAfter = volcengine.Int64(86400)
+		}
+	} else if serviceTier == "standard" {
+		req.ServiceTier = volcengine.String("standard")
 	}
 
 	// Helper for 1.5 Pro audio generation if needed, but defaults are usually fine.

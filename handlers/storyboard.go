@@ -11,6 +11,7 @@ import (
 	"seedance-client/services"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -39,6 +40,10 @@ func CreateStoryboard(c *gin.Context) {
 	durationStr := c.PostForm("duration")
 	duration, _ := strconv.Atoi(durationStr)
 	generateAudio := c.PostForm("generate_audio") == "true"
+	serviceTier := c.PostForm("service_tier")
+	if serviceTier == "" {
+		serviceTier = "standard" // Default
+	}
 
 	storyboard := models.Storyboard{
 		ProjectID:     uint(projectID),
@@ -47,7 +52,12 @@ func CreateStoryboard(c *gin.Context) {
 		Ratio:         ratio,
 		Duration:      duration,
 		GenerateAudio: generateAudio,
+		ServiceTier:   serviceTier,
 		Status:        "Draft",
+	}
+
+	if serviceTier == "flex" {
+		storyboard.ExpiresAfter = 86400 // 24 hours
 	}
 
 	// Handle File Uploads
@@ -112,7 +122,7 @@ func GenerateVideo(c *gin.Context) {
 		lastFrameURL = b64
 	}
 
-	taskID, err := volcService.CreateVideoTask(sb.ModelID, sb.Prompt, firstFrameURL, lastFrameURL, sb.Ratio, sb.Duration, sb.GenerateAudio)
+	taskID, err := volcService.CreateVideoTask(sb.ModelID, sb.Prompt, firstFrameURL, lastFrameURL, sb.Ratio, sb.Duration, sb.GenerateAudio, sb.ServiceTier, sb.ExpiresAfter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		sb.Status = "Failed"
@@ -138,6 +148,17 @@ func GetStoryboardStatus(c *gin.Context) {
 	if sb.TaskID == "" {
 		c.JSON(http.StatusOK, gin.H{"status": sb.Status})
 		return
+	}
+
+	// Calculate poll interval
+	pollInterval := 3000 // Default 3s
+	if sb.ServiceTier == "flex" {
+		// If created more than 10 mins ago, slow down polling
+		if time.Since(sb.CreatedAt) > 10*time.Minute {
+			pollInterval = 60000 // 60s
+		} else {
+			pollInterval = 10000 // 10s
+		}
 	}
 
 	// Call API to check status
@@ -181,6 +202,7 @@ func GetStoryboardStatus(c *gin.Context) {
 		"status":         sb.Status,
 		"video_url":      sb.VideoURL,
 		"last_frame_url": sb.LastFrameURL,
+		"poll_interval":  pollInterval,
 	})
 }
 
@@ -243,6 +265,16 @@ func UpdateStoryboard(c *gin.Context) {
 	generateAudioStr := c.PostForm("generate_audio")
 	if generateAudioStr != "" {
 		sb.GenerateAudio = generateAudioStr == "true"
+	}
+
+	serviceTier := c.PostForm("service_tier")
+	if serviceTier != "" {
+		sb.ServiceTier = serviceTier
+		if serviceTier == "flex" {
+			sb.ExpiresAfter = 86400
+		} else {
+			sb.ExpiresAfter = 0
+		}
 	}
 
 	// Handle optional file uploads

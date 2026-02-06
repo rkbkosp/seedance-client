@@ -50,7 +50,7 @@
             <div class="flex items-center gap-2">
                 <!-- Edit Button -->
                 <button type="button"
-                    onclick="openEditDialog({{ .ID }}, '{{ .Prompt }}', '{{ .ModelID }}', '{{ .Ratio }}', {{ .Duration }}, {{ .GenerateAudio }})"
+                    onclick="openEditDialog({{ .ID }}, '{{ .Prompt }}', '{{ .ModelID }}', '{{ .Ratio }}', {{ .Duration }}, {{ .GenerateAudio }}, '{{ .ServiceTier }}')"
                     class="text-md-sys-color-primary hover:bg-md-sys-color-primary/10 p-2 rounded-full transition"
                     title="Edit">
                     <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
@@ -108,6 +108,10 @@
                     <span
                         class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
                         {{ .ModelID }}
+                    </span>
+                    <span
+                        class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
+                        {{ if eq .ServiceTier "flex" }}Economic (Flex){{ else }}Standard{{ end }}
                     </span>
                     <span
                         class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
@@ -303,6 +307,15 @@
                     <option value="10">10s</option>
                 </select>
             </div>
+            <!-- Service Tier (Mode) -->
+            <div class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2">
+                <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.mode">Mode</label>
+                <select name="service_tier"
+                    class="w-full bg-transparent outline-none text-md-sys-color-on-surface font-medium py-1">
+                    <option value="standard" selected>Standard (Fast)</option>
+                    <option value="flex">Economic (Flex)</option>
+                </select>
+            </div>
             <!-- Generate Audio Checkbox -->
             <div
                 class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2 flex items-center justify-between">
@@ -377,6 +390,16 @@
                         <option value="10">10s</option>
                     </select>
                 </div>
+                <!-- Service Tier (Mode) -->
+                <div
+                    class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2">
+                    <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.mode">Mode</label>
+                    <select id="edit-service-tier" name="service_tier"
+                        class="w-full bg-transparent outline-none text-md-sys-color-on-surface font-medium py-1">
+                        <option value="standard">Standard (Fast)</option>
+                        <option value="flex">Economic (Flex)</option>
+                    </select>
+                </div>
                 <!-- Generate Audio -->
                 <div
                     class="bg-md-sys-color-surface-variant/30 rounded-t-lg border-b border-md-sys-color-outline px-4 py-2 flex items-center justify-between">
@@ -426,7 +449,7 @@
     // State management for polling
     const activeTasks = new Set([
         {{ range .Project.Storyboards }}
-    {{ if or (eq .Status "Running") (eq .Status "Queued") }} {{ .ID }}, {{ end }}
+    {{ if or (eq.Status "Running") (eq.Status "Queued") }} {{ .ID }}, {{ end }}
     {{ end }}
     ]);
     let pollInterval = null;
@@ -539,36 +562,57 @@
         }
     }
 
-    // Polling Logic
-    async function startPolling() {
-        if (pollInterval) clearInterval(pollInterval);
+    // Adaptive Polling Logic with Recursive setTimeout
+    async function startAdaptivePolling() {
+        if (activeTasks.size === 0) {
+            window.isPolling = false;
+            return;
+        }
 
-        pollInterval = setInterval(async () => {
-            if (activeTasks.size === 0) {
-                clearInterval(pollInterval);
-                pollInterval = null;
-                return;
-            }
+        let nextPollDelay = 3000; // Default minimum delay
+        let foundStandard = false;
+        let minReportedInterval = 999999;
 
-            for (const id of activeTasks) {
-                try {
-                    const res = await fetch(`/storyboards/${id}/status`);
-                    const data = await res.json();
+        const promises = Array.from(activeTasks).map(async (id) => {
+            try {
+                const res = await fetch(`/storyboards/${id}/status`);
+                const data = await res.json();
 
-                    if (data.status) {
-                        updateStatusBadge(id, data.status);
-                        updateRightCol(id, data);
+                if (data.status) {
+                    updateStatusBadge(id, data.status);
+                    updateRightCol(id, data);
 
-                        const s = data.status.toLowerCase();
-                        if (s === 'succeeded' || s === 'failed') {
-                            activeTasks.delete(id);
-                        }
+                    const s = data.status.toLowerCase();
+                    if (s === 'succeeded' || s === 'failed') {
+                        activeTasks.delete(id);
                     }
-                } catch (err) {
-                    console.error ('Poll failed for', id, err);
+
+                    // Adaptive logic
+                    if (data.poll_interval) {
+                        minReportedInterval = Math.min(minReportedInterval, data.poll_interval);
+                    }
                 }
+            } catch (err) {
+                console.error ('Poll failed for', id, err);
             }
-        }, 3000); // 3s interval
+        });
+
+        await Promise.all(promises);
+
+        // Determine next poll time
+        if (minReportedInterval < 999999) {
+            nextPollDelay = minReportedInterval;
+        } else {
+            // Fallback if server didn't send interval
+            nextPollDelay = 3000;
+        }
+
+        // Ensure we don't hammer the server if it returns crazy small value
+        if (nextPollDelay < 1000) nextPollDelay = 1000;
+
+        if (activeTasks.size > 0) {
+            setTimeout(startAdaptivePolling, nextPollDelay);
+        }
     }
 
     // Handle Generate Submit
@@ -597,7 +641,14 @@
 
                     // Start polling
                     activeTasks.add(id);
-                    if (!pollInterval) startPolling();
+                    // If not already polling (or to reset/ensure it's running), call start
+                    // Since we use recursive setTimeout, we need to check if we should "kick" it.
+                    // A simple way is to just call it, but need to avoid double loops.
+                    // We can use a flag.
+                    if (!window.isPolling) {
+                        startAdaptivePolling();
+                        window.isPolling = true;
+                    }
 
                 } else {
                     const errData = await resp.json().catch(() => ({}));
@@ -625,7 +676,8 @@
 
         // Resume polling if needed
         if (activeTasks.size > 0) {
-            startPolling();
+            startAdaptivePolling();
+            window.isPolling = true;
         }
 
         // Initialize Audio Toggle Logic
@@ -661,7 +713,7 @@
 
     // ... (Keep existing Helper functions like openEditDialog, useAsFirstFrame, setupDragDrop) ...
     // Open Edit Dialog with pre-populated values
-    function openEditDialog(id, prompt, modelId, ratio, duration, generateAudio) {
+    function openEditDialog(id, prompt, modelId, ratio, duration, generateAudio, serviceTier) {
         const dialog = document.getElementById('edit-dialog');
         const form = document.getElementById('edit-form');
         form.action = `/storyboards/${id}/update`;
@@ -669,6 +721,13 @@
         document.getElementById('edit-model').value = modelId;
         document.getElementById('edit-ratio').value = ratio;
         document.getElementById('edit-duration').value = duration.toString();
+
+        const stSelect = document.getElementById('edit-service-tier');
+        if (stSelect && serviceTier) {
+            stSelect.value = serviceTier;
+        } else if (stSelect) {
+            stSelect.value = 'standard';
+        }
 
         const audioCheckbox = document.getElementById('edit-generate-audio');
         if (audioCheckbox) {
