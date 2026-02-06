@@ -32,184 +32,233 @@
 <!-- Storyboard List -->
 <div class="space-y-12">
     {{ range .Project.Storyboards }}
-    <div class="bg-md-sys-color-surface rounded-md3-xl shadow-lg border border-md-sys-color-outline/10 overflow-hidden"
-        id="sb-{{ .ID }}">
-        <!-- Header -->
+    <div class="bg-md-sys-color-surface rounded-md3-xl shadow-lg border border-md-sys-color-outline/10 overflow-hidden mb-12"
+        id="sb-container-{{ .ID }}">
+
+        <!-- Takes Tab Bar -->
         <div
-            class="px-8 py-5 border-b border-md-sys-color-surface-variant/50 flex justify-between items-center bg-md-sys-color-surface">
-            <div class="flex items-center gap-4">
-                <span class="text-lg font-medium text-md-sys-color-on-surface"><span
-                        data-i18n="sb.scene">Storyboard</span> {{ .ID }}</span>
-                <span id="sb-status-{{ .ID }}" class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide 
-                    {{ if eq .Status " Succeeded" }}bg-green-100 text-green-800 {{ else if eq .Status "Failed"
-                    }}bg-red-100 text-red-800 {{ else if eq .Status "Running" }}bg-blue-100 text-blue-800 {{ else if eq
-                    .Status "Queued" }}bg-blue-100 text-blue-800 {{ else }}bg-gray-200 text-gray-700{{ end }}">
-                    {{ .Status }}
-                </span>
-            </div>
-            <div class="flex items-center gap-2">
-                <!-- Edit Button -->
-                <button type="button"
-                    onclick="openEditDialog({{ .ID }}, '{{ .Prompt }}', '{{ .ModelID }}', '{{ .Ratio }}', {{ .Duration }}, {{ .GenerateAudio }}, '{{ .ServiceTier }}')"
-                    class="text-md-sys-color-primary hover:bg-md-sys-color-primary/10 p-2 rounded-full transition"
-                    title="Edit">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
-                        fill="currentColor">
-                        <path
-                            d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z" />
-                    </svg>
+            class="px-8 pt-4 pb-0 flex items-center gap-2 overflow-x-auto border-b border-md-sys-color-surface-variant/30 scrollbar-hide">
+            <span
+                class="text-xs font-bold text-md-sys-color-on-surface-variant uppercase tracking-wider mr-2">Versions:</span>
+            {{ $activeTakeID := .ActiveTake.ID }}
+            {{ $activeVersion := 1 }}
+            {{ range $index, $take := .Takes }}
+            {{ $version := add $index 1 }}
+            {{ if eq $take.ID $activeTakeID }}
+            {{ $activeVersion = $version }}
+            {{ end }}
+            <div class="group relative flex items-center">
+                <button onclick="switchTake({{ .ID }}, {{ .StoryboardID }}, {{ $version }})" class="take-tab-{{ .StoryboardID }} px-4 py-2 text-sm font-medium rounded-t-lg transition border-b-2 
+            {{ if eq .ID $activeTakeID }}
+                text-md-sys-color-primary border-md-sys-color-primary bg-md-sys-color-surface-variant/20
+            {{ else }}
+                text-md-sys-color-on-surface-variant/70 border-transparent hover:text-md-sys-color-on-surface-variant hover:bg-md-sys-color-surface-variant/10
+            {{ end }}" data-take-id="{{ .ID }}" data-version="{{ $version }}">
+                    v{{ $version }}
+                    {{ if .IsGood }}<span class="ml-1" title="Marked as Good Take">🩷</span>{{ end }}
                 </button>
-                <!-- Delete Button -->
-                <form action="/storyboards/delete/{{ .ID }}" method="POST"
-                    onsubmit="return confirm(window.i18n_data[getLanguage()]['sb.confirm_delete'] || 'Delete this storyboard?');">
-                    <button type="submit"
-                        class="text-md-sys-color-error hover:bg-md-sys-color-error/10 p-2 rounded-full transition">
+            </div>
+            {{ end }}
+        </div>
+
+        {{ with .ActiveTake }}
+        <div id="take-content-{{ .StoryboardID }}" class="take-content" data-take-id="{{ .ID }}"
+            data-current-version="{{ $activeVersion }}">
+            <!-- Header -->
+            <div
+                class="px-8 py-5 border-b border-md-sys-color-surface-variant/50 flex justify-between items-center bg-md-sys-color-surface">
+                <div class="flex items-center gap-4">
+                    <span class="text-lg font-medium text-md-sys-color-on-surface"><span
+                            data-i18n="sb.scene">Version</span> {{ $activeVersion }}</span>
+                    <span id="sb-status-{{ .ID }}" class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide 
+                    {{ if eq .Status " Succeeded" }}bg-green-100 text-green-800 {{ else if eq .Status "Failed"
+                        }}bg-red-100 text-red-800 {{ else if eq .Status "Running" }}bg-blue-100 text-blue-800 {{ else if
+                        eq .Status "Queued" }}bg-blue-100 text-blue-800 {{ else }}bg-gray-200 text-gray-700{{ end }}">
+                        {{ .Status }}
+                    </span>
+                    <!-- Good Take Toggle -->
+                    <button onclick="toggleGoodTake({{ .ID }}, this)"
+                        class="p-2 rounded-full transition {{ if .IsGood }}text-pink-500 bg-pink-100{{ else }}text-gray-400 hover:text-pink-400{{ end }}"
+                        title="Mark as Good Take">
+                        <span class="material-symbols-outlined text-lg">favorite</span>
+                    </button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <!-- Edit Button -->
+                    <button type="button"
+                        onclick="openEditDialog({{ .StoryboardID }}, '{{ .Prompt }}', '{{ .ModelID }}', '{{ .Ratio }}', {{ .Duration }}, {{ .GenerateAudio }}, '{{ .ServiceTier }}')"
+                        class="text-md-sys-color-primary hover:bg-md-sys-color-primary/10 p-2 rounded-full transition"
+                        title="Edit & Save as New Take">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                            fill="currentColor">
+                            <path
+                                d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z" />
+                        </svg>
+                    </button>
+                    <!-- Delete Button (Delete Take) -->
+                    <button type="button" onclick="deleteTake({{ .ID }})"
+                        class="text-md-sys-color-error hover:bg-md-sys-color-error/10 p-2 rounded-full transition"
+                        title="Delete Take">
                         <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
                             fill="currentColor">
                             <path
                                 d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z" />
                         </svg>
                     </button>
-                </form>
-            </div>
-        </div>
-
-        <div class="flex flex-col md:flex-row">
-            <!-- Left: Inputs & Config -->
-            <div class="md:w-1/2 p-8 space-y-6">
-                <div>
-                    <h3 class="text-sm font-bold text-md-sys-color-primary mb-2 uppercase tracking-wider"
-                        data-i18n="sb.prompt">Prompt</h3>
-                    <p class="text-md-sys-color-on-surface text-lg leading-relaxed">{{ .Prompt }}</p>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    {{ if .FirstFramePath }}
-                    <div class="relative group">
-                        <label class="block text-xs font-bold text-md-sys-color-on-surface-variant mb-1 uppercase"
-                            data-i18n="sb.first_frame">First Frame</label>
-                        <div class="rounded-md3-md overflow-hidden border border-md-sys-color-outline/20">
-                            <img src="/{{ .FirstFramePath }}" class="w-full h-32 object-cover">
-                        </div>
-                    </div>
-                    {{ end }}
-                    {{ if .LastFramePath }}
-                    <div class="relative group">
-                        <label class="block text-xs font-bold text-md-sys-color-on-surface-variant mb-1 uppercase"
-                            data-i18n="sb.last_frame">Last Frame</label>
-                        <div class="rounded-md3-md overflow-hidden border border-md-sys-color-outline/20">
-                            <img src="/{{ .LastFramePath }}" class="w-full h-32 object-cover">
-                        </div>
-                    </div>
-                    {{ end }}
-                </div>
-
-                <div class="flex flex-wrap gap-3 mt-4">
-                    <span
-                        class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
-                        {{ .ModelID }}
-                    </span>
-                    <span
-                        class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
-                        {{ if eq .ServiceTier "flex" }}Economic (Flex){{ else }}Standard{{ end }}
-                    </span>
-                    <span
-                        class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
-                        {{ .Ratio }}
-                    </span>
-                    <span
-                        class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
-                        {{ .Duration }}s
-                    </span>
-                </div>
-            </div>
-
-            <!-- Right: Media Output -->
-            <div id="sb-right-col-{{ .ID }}"
-                class="md:w-1/2 bg-black flex items-center justify-center relative min-h-[360px]">
-                {{ if eq .Status "Succeeded" }}
-                <video controls class="w-full h-full max-h-[500px] object-contain" loop>
-                    <source src="{{ .VideoURL }}" type="video/mp4">
-                    Your browser does not support the video tag.
-                </video>
-                <!-- Floating Action Buttons -->
-                <div class="absolute bottom-4 right-4 flex gap-2">
-                    {{ if .LastFrameURL }}
-                    <!-- Use Last Frame as First Frame for New Storyboard -->
-                    <button type="button" onclick="useAsFirstFrame('{{ .LastFrameURL }}')"
-                        class="bg-md-sys-color-tertiary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-tertiary/90 transition"
-                        title="Use last frame as first frame for new storyboard">
-                        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
-                            fill="currentColor">
-                            <path
-                                d="M440-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h160v80H280q-50 0-85 35t-35 85q0 50 35 85t85 35h160v80ZM320-440v-80h320v80H320Zm200 160v-80h160q50 0 85-35t35-85q0-50-35-85t-85-35H520v-80h160q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H520Z" />
-                        </svg>
-                    </button>
-                    <!-- Download Last Frame -->
-                    <a href="{{ .LastFrameURL }}" download
-                        class="bg-md-sys-color-secondary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-secondary/90 transition"
-                        title="Download last frame">
-                        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
-                            fill="currentColor">
-                            <path
-                                d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z" />
-                        </svg>
-                    </a>
-                    {{ end }}
-                    <!-- Download Video -->
-                    <a href="{{ .VideoURL }}" download
-                        class="bg-md-sys-color-primary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-primary/90 transition"
-                        title="Download video">
-                        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
-                            fill="currentColor">
-                            <path
-                                d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
-                        </svg>
-                    </a>
-                </div>
-                {{ else if or (eq .Status "Running") (eq .Status "Queued") }}
-                <div class="text-white flex flex-col items-center">
-                    <div
-                        class="w-12 h-12 border-4 border-md-sys-color-primary border-t-transparent rounded-full animate-spin mb-4">
-                    </div>
-                    <p class="font-medium tracking-wide" data-i18n="sb.generating">GENERATING SCENE...</p>
-                </div>
-                {{ else if eq .Status "Draft" }}
-                <form action="/storyboards/{{ .ID }}/generate" method="POST" class="generate-form" data-id="{{ .ID }}">
-                    <button type="submit"
-                        class="bg-md-sys-color-primary-container text-md-sys-color-on-primary-container px-8 py-4 rounded-full font-bold text-lg shadow-lg hover:shadow-xl hover:scale-105 transition transform flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
-                            fill="currentColor">
-                            <path d="M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z" />
-                        </svg>
-                        <span data-i18n="sb.start_gen">Generate Video</span>
-                    </button>
-                </form>
-                {{ else }}
-                <div class="text-md-sys-color-error flex flex-col items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="48" viewBox="0 -960 960 960" width="48"
-                        fill="currentColor">
-                        <path
-                            d="M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z" />
-                    </svg>
-                    <p class="mt-2 font-bold" data-i18n="sb.failed">Generation Failed</p>
-                    <!-- Retry Button -->
-                    <form action="/storyboards/{{ .ID }}/generate" method="POST" class="generate-form mt-4"
-                        data-id="{{ .ID }}">
+                    <!-- Delete Storyboard Button (Container) -->
+                    <form action="/storyboards/delete/{{ .StoryboardID }}" method="POST" class="inline"
+                        onsubmit="return confirm(window.i18n_data[getLanguage()]['sb.confirm_delete'] || 'Delete entire storyboard container?');">
                         <button type="submit"
-                            class="bg-md-sys-color-error text-white px-6 py-2 rounded-full font-medium shadow-md hover:shadow-lg hover:scale-105 transition transform flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20"
+                            class="text-md-sys-color-on-surface-variant/50 hover:text-md-sys-color-error hover:bg-md-sys-color-error/10 p-2 rounded-full transition"
+                            title="Delete Entire Storyboard">
+                            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
                                 fill="currentColor">
                                 <path
-                                    d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z" />
+                                    d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z" />
                             </svg>
-                            <span data-i18n="sb.retry">Retry</span>
                         </button>
                     </form>
                 </div>
-                {{ end }}
+            </div>
+
+            <div class="flex flex-col md:flex-row">
+                <!-- Left: Inputs & Config -->
+                <div class="md:w-1/2 p-8 space-y-6">
+                    <div>
+                        <h3 class="text-sm font-bold text-md-sys-color-primary mb-2 uppercase tracking-wider"
+                            data-i18n="sb.prompt">Prompt</h3>
+                        <p class="text-md-sys-color-on-surface text-lg leading-relaxed">{{ .Prompt }}</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        {{ if .FirstFramePath }}
+                        <div class="relative group">
+                            <label class="block text-xs font-bold text-md-sys-color-on-surface-variant mb-1 uppercase"
+                                data-i18n="sb.first_frame">First Frame</label>
+                            <div class="rounded-md3-md overflow-hidden border border-md-sys-color-outline/20">
+                                <img src="/{{ .FirstFramePath }}" class="w-full h-32 object-cover">
+                            </div>
+                        </div>
+                        {{ end }}
+                        {{ if .LastFramePath }}
+                        <div class="relative group">
+                            <label class="block text-xs font-bold text-md-sys-color-on-surface-variant mb-1 uppercase"
+                                data-i18n="sb.last_frame">Last Frame</label>
+                            <div class="rounded-md3-md overflow-hidden border border-md-sys-color-outline/20">
+                                <img src="/{{ .LastFramePath }}" class="w-full h-32 object-cover">
+                            </div>
+                        </div>
+                        {{ end }}
+                    </div>
+
+                    <div class="flex flex-wrap gap-3 mt-4">
+                        <span
+                            class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
+                            {{ .ModelID }}
+                        </span>
+                        <span
+                            class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
+                            {{ if eq .ServiceTier "flex" }}Economic (Flex){{ else }}Standard{{ end }}
+                        </span>
+                        <span
+                            class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
+                            {{ .Ratio }}
+                        </span>
+                        <span
+                            class="inline-flex items-center px-3 py-1 rounded-lg bg-md-sys-color-secondary-container text-md-sys-color-on-secondary-container text-xs font-medium">
+                            {{ .Duration }}s
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Right: Media Output -->
+                <div id="sb-right-col-{{ .ID }}"
+                    class="md:w-1/2 bg-black flex items-center justify-center relative min-h-[360px]">
+                    {{ if eq .Status "Succeeded" }}
+                    <video controls class="w-full h-full max-h-[500px] object-contain" loop>
+                        <source src="{{ .VideoURL }}" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    <!-- Floating Action Buttons -->
+                    <div class="absolute bottom-4 right-4 flex gap-2">
+                        {{ if .LastFrameURL }}
+                        <!-- Use Last Frame as First Frame for New Storyboard -->
+                        <button type="button" onclick="useAsFirstFrame('{{ .LastFrameURL }}')"
+                            class="bg-md-sys-color-tertiary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-tertiary/90 transition"
+                            title="Use last frame as first frame for new storyboard">
+                            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                                fill="currentColor">
+                                <path
+                                    d="M440-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h160v80H280q-50 0-85 35t-35 85q0 50 35 85t85 35h160v80ZM320-440v-80h320v80H320Zm200 160v-80h160q50 0 85-35t35-85q0-50-35-85t-85-35H520v-80h160q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H520Z" />
+                            </svg>
+                        </button>
+                        <!-- Download Last Frame -->
+                        <a href="{{ .LastFrameURL }}" download
+                            class="bg-md-sys-color-secondary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-secondary/90 transition"
+                            title="Download last frame">
+                            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                                fill="currentColor">
+                                <path
+                                    d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z" />
+                            </svg>
+                        </a>
+                        {{ end }}
+                        <!-- Download Video -->
+                        <a href="{{ .VideoURL }}" download
+                            class="bg-md-sys-color-primary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-primary/90 transition"
+                            title="Download video">
+                            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                                fill="currentColor">
+                                <path
+                                    d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
+                            </svg>
+                        </a>
+                    </div>
+                    {{ else if or (eq .Status "Running") (eq .Status "Queued") }}
+                    <div class="text-white flex flex-col items-center">
+                        <div
+                            class="w-12 h-12 border-4 border-md-sys-color-primary border-t-transparent rounded-full animate-spin mb-4">
+                        </div>
+                        <p class="font-medium tracking-wide" data-i18n="sb.generating">GENERATING SCENE...</p>
+                    </div>
+                    {{ else if eq .Status "Draft" }}
+                    <form action="/takes/{{ .ID }}/generate" method="POST" class="generate-form" data-id="{{ .ID }}">
+                        <button type="submit"
+                            class="bg-md-sys-color-primary-container text-md-sys-color-on-primary-container px-8 py-4 rounded-full font-bold text-lg shadow-lg hover:shadow-xl hover:scale-105 transition transform flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
+                                fill="currentColor">
+                                <path d="M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z" />
+                            </svg>
+                            <span data-i18n="sb.start_gen">Generate Video</span>
+                        </button>
+                    </form>
+                    {{ else }}
+                    <div class="text-md-sys-color-error flex flex-col items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="48" viewBox="0 -960 960 960" width="48"
+                            fill="currentColor">
+                            <path
+                                d="M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z" />
+                        </svg>
+                        <p class="mt-2 font-bold" data-i18n="sb.failed">Generation Failed</p>
+                        <!-- Retry Button -->
+                        <form action="/takes/{{ .ID }}/generate" method="POST" class="generate-form mt-4"
+                            data-id="{{ .ID }}">
+                            <button type="submit"
+                                class="bg-md-sys-color-error text-white px-6 py-2 rounded-full font-medium shadow-md hover:shadow-lg hover:scale-105 transition transform flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20"
+                                    fill="currentColor">
+                                    <path
+                                        d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z" />
+                                </svg>
+                                <span data-i18n="sb.retry">Retry</span>
+                            </button>
+                        </form>
+                    </div>
+                    {{ end }}
+                </div>
             </div>
         </div>
+        {{ end }}
     </div>
     {{ end }}
 </div>
@@ -233,7 +282,8 @@
             <textarea name="prompt" rows="3" required
                 class="w-full bg-md-sys-color-surface-variant/30 border-b-2 border-md-sys-color-outline hover:border-md-sys-color-on-surface-variant focus:border-md-sys-color-primary rounded-t-lg px-4 py-3 outline-none transition-colors resize-none"
                 data-i18n="sb.desc_placeholder" placeholder="Describe your scene in detail..."></textarea>
-            <p class="text-xs text-md-sys-color-outline mt-1 ml-1" data-i18n="sb.desc_hint">Detailed descriptions yield
+            <p class="text-xs text-md-sys-color-outline mt-1 ml-1" data-i18n="sb.desc_hint">Detailed descriptions
+                yield
                 better results.</p>
         </div>
 
@@ -322,7 +372,8 @@
                 <div class="flex flex-col">
                     <label class="block text-xs text-md-sys-color-primary mb-1" data-i18n="sb.audio">Generate
                         Audio</label>
-                    <span class="text-[10px] text-md-sys-color-outline leading-tight">Sync audio (1.5 Pro only)</span>
+                    <span class="text-[10px] text-md-sys-color-outline leading-tight">Sync audio (1.5 Pro
+                        only)</span>
                 </div>
                 <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
                     <input type="checkbox" name="generate_audio" id="new-generate-audio" value="true"
@@ -448,9 +499,7 @@
 <script>
     // State management for polling
     const activeTasks = new Set([
-        {{ range .Project.Storyboards }}
-    {{ if or (eq .Status "Running") (eq .Status "Queued") }} {{ .ID }}, {{ end }}
-    {{ end }}
+        {{ range .Project.Storyboards }}{{ with .ActiveTake }}{{ if or (eq .Status "Running") (eq .Status "Queued") }}{{ .ID }},{{ end }}{{ end }}{{ end }}
     ]);
     let pollInterval = null;
 
@@ -498,7 +547,7 @@
                     <path d="M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z" />
                 </svg>
                 <p class="mt-2 font-bold" data-i18n="sb.failed">Generation Failed</p>
-                <form action="/storyboards/${id}/generate" method="POST" class="generate-form mt-4" data-id="${id}">
+                <form action="/takes/${id}/generate" method="POST" class="generate-form mt-4" data-id="${id}">
                     <button type="submit"
                         class="bg-md-sys-color-error text-white px-6 py-2 rounded-full font-medium shadow-md hover:shadow-lg hover:scale-105 transition transform flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20" fill="currentColor">
@@ -562,6 +611,225 @@
         }
     }
 
+    // Switch Take Tab
+    async function switchTake(id, sbId, version) {
+        // Highlight active tab
+        document.querySelectorAll(`.take-tab-${sbId}`).forEach(btn => {
+            const isTarget = btn.getAttribute('data-take-id') == id;
+            if (isTarget) {
+                btn.className = `take-tab-${sbId} px-4 py-2 text-sm font-medium rounded-t-lg transition border-b-2 text-md-sys-color-primary border-md-sys-color-primary bg-md-sys-color-surface-variant/20`;
+            } else {
+                btn.className = `take-tab-${sbId} px-4 py-2 text-sm font-medium rounded-t-lg transition border-b-2 text-md-sys-color-on-surface-variant/70 border-transparent hover:text-md-sys-color-on-surface-variant hover:bg-md-sys-color-surface-variant/10`;
+            }
+        });
+
+        // Set Attribute for current version
+        const contentDiv = document.getElementById(`take-content-${sbId}`);
+        if (contentDiv) contentDiv.setAttribute('data-current-version', version);
+
+        // Fetch Take Data
+        try {
+            const res = await fetch(`/takes/${id}`);
+            const take = await res.json();
+            renderTakeContent(sbId, take, version);
+
+            // Manage polling
+            if (take.status === 'Running' || take.status === 'Queued') {
+                activeTasks.add(take.id);
+                if (!window.isPolling) {
+                    startAdaptivePolling();
+                    window.isPolling = true;
+                }
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Failed to switch take');
+        }
+    }
+
+    // Render Take Content
+    function renderTakeContent(sbId, take, version) {
+        const contentDiv = document.getElementById(`take-content-${sbId}`);
+        if (!contentDiv) return;
+
+        // If version is not provided (e.g. from polling update), try to read from attribute
+        if (!version) {
+            version = contentDiv.getAttribute('data-current-version') || '?';
+        }
+
+        // Update Header
+        const headerTitle = contentDiv.querySelector('.text-lg.font-medium');
+        if (headerTitle) {
+            headerTitle.innerHTML = `<span data-i18n="sb.scene">Version</span> ${version}`;
+        }
+
+        // Update Good Take Button
+        const goodBtn = contentDiv.querySelector('button[onclick^="toggleGoodTake"]');
+        if (goodBtn) {
+            goodBtn.setAttribute('onclick', `toggleGoodTake(${take.id}, this)`);
+            updateGoodBtnStyle(goodBtn, take.is_good);
+        }
+
+        // Update Edit Button 
+        const editBtn = contentDiv.querySelector('button[onclick^="openEditDialog"]');
+        if (editBtn) {
+            editBtn.setAttribute('onclick', `openEditDialog(${take.storyboard_id}, '${take.prompt.replace(/'/g, "\\'")}', '${take.model_id}', '${take.ratio}', ${take.duration}, ${take.generate_audio}, '${take.service_tier}')`);
+        }
+
+        // Update Delete Button (Delete Take)
+        const delBtn = contentDiv.querySelector('button[onclick^="deleteTake"]');
+        if (delBtn) {
+            delBtn.setAttribute('onclick', `deleteTake(${take.id})`);
+        }
+
+        // Update Status Badge
+        updateStatusBadge(take.id, take.status);
+
+        // Update Inputs
+        // Prompt
+        const promptP = contentDiv.querySelector('p.text-lg');
+        if (promptP) promptP.textContent = take.prompt;
+
+        // Chips
+        const chips = contentDiv.querySelectorAll('.inline-flex');
+        if (chips.length >= 4) {
+            chips[0].textContent = take.model_id;
+            chips[1].textContent = take.service_tier === 'flex' ? 'Economic (Flex)' : 'Standard';
+            chips[2].textContent = take.ratio;
+            chips[3].textContent = take.duration + 's';
+        }
+
+        // Frames Images
+        const imgs = contentDiv.querySelectorAll('img');
+        const firstFrameContainer = contentDiv.querySelector('[data-i18n="sb.first_frame"]')?.nextElementSibling;
+        const lastFrameContainer = contentDiv.querySelector('[data-i18n="sb.last_frame"]')?.nextElementSibling;
+
+        // Helper to update image container
+        const updateImg = (container, path) => {
+            if (path) {
+                if (container) {
+                    container.innerHTML = `<img src="/${path}" class="w-full h-32 object-cover">`;
+                    container.parentElement.style.display = 'block';
+                }
+            } else {
+                if (container) {
+                    container.innerHTML = '';
+                    container.parentElement.style.display = 'none';
+                }
+            }
+        };
+
+        // We need to target specific containers accurately. 
+        // The structure is distinct enough: label + div > img
+        // Actually, the previous code had 'grid-cols-2'. 
+        // Let's rely on the structure we see in the template.
+        // Left column is inside `md:w-1/2 p-8 space-y-6`
+        const validImgs = contentDiv.querySelectorAll('.rounded-md3-md img');
+
+        // Re-rendering images is tricky if we don't have stable references. 
+        // Simplest strategy: Find the containers by their label proximity or just specific classes if we added them.
+        // We didn't add specific IDs to frame containers.
+        // Let's assume the order: First Frame, Last Frame.
+        // The template has conditional blocks for FirstFramePath and LastFramePath
+        // If we want to dynamically show/hide them, `renderTakeContent` needs to be robust. 
+        // For now, let's just reload the page if structure changes drastically? No, that defeats the purpose.
+        // Better: Update `updateRightCol` (Media Output) which is already dynamic. 
+        // For Left Col inputs (images), let's accept they might not update perfectly without IDs.
+        // Wait, `renderTakeContent` IS supposed to update the left column too.
+
+        // Let's improve the template to give IDs to frame containers in a future step if needed. 
+        // For now, let's just update the Media Output (Right Col)
+        updateRightCol(sbId, take);
+        const ffImg = contentDiv.querySelector('[data-i18n="sb.first_frame"] + div img');
+        if (ffImg && take.first_frame_path) {
+            ffImg.src = "/" + take.first_frame_path;
+            ffImg.parentElement.parentElement.style.display = 'block';
+        } else if (ffImg) {
+            ffImg.parentElement.parentElement.style.display = 'none';
+        }
+
+        // Last Frame
+        const lfImg = contentDiv.querySelector('[data-i18n="sb.last_frame"] + div img');
+        if (lfImg && take.last_frame_path) {
+            lfImg.src = "/" + take.last_frame_path;
+            lfImg.parentElement.parentElement.style.display = 'block';
+        } else if (lfImg) {
+            lfImg.parentElement.parentElement.style.display = 'none';
+        }
+    }
+
+    function updateGoodBtnStyle(btn, isGood) {
+        if (isGood) {
+            btn.classList.add('text-pink-500', 'bg-pink-100');
+            btn.classList.remove('text-gray-400', 'hover:text-pink-400');
+        } else {
+            btn.classList.remove('text-pink-500', 'bg-pink-100');
+            btn.classList.add('text-gray-400', 'hover:text-pink-400');
+        }
+    }
+
+    async function toggleGoodTake(id, btn) {
+        try {
+            const res = await fetch(`/takes/${id}/toggle_good`, { method: 'POST' });
+            const data = await res.json();
+            updateGoodBtnStyle(btn, data.is_good);
+
+            // Update Tabs
+            const contentDiv = btn.closest('.take-content');
+            if (contentDiv) {
+                // Extract Storyboard ID from id="take-content-{SBID}"
+                const sbIdStr = contentDiv.id.replace('take-content-', '');
+                const sbId = parseInt(sbIdStr);
+
+                if (data.is_good) {
+                    // Remove heart from ALL tabs for this storyboard
+                    const allTabs = document.querySelectorAll(`.take-tab-${sbId}`);
+                    allTabs.forEach(tab => {
+                        const heartSpan = tab.querySelector('span[title="Marked as Good Take"]');
+                        if (heartSpan) heartSpan.remove();
+                    });
+
+                    // Add heart to CURRENT tab
+                    // We need to find the specific tab for this take. 
+                    // The tabs have data-take-id attribute.
+                    const currentTab = document.querySelector(`.take-tab-${sbId}[data-take-id="${id}"]`);
+                    if (currentTab) {
+                        const span = document.createElement('span');
+                        span.className = "ml-1";
+                        span.title = "Marked as Good Take";
+                        span.textContent = "🩷";
+                        currentTab.appendChild(span);
+                    }
+                } else {
+                    // Just remove heart from current tab
+                    const currentTab = document.querySelector(`.take-tab-${sbId}[data-take-id="${id}"]`);
+                    if (currentTab) {
+                        const heartSpan = currentTab.querySelector('span[title="Marked as Good Take"]');
+                        if (heartSpan) heartSpan.remove();
+                    }
+                }
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function deleteTake(id) {
+        if (!confirm('Delete this take version?')) return;
+        try {
+            const res = await fetch(`/takes/delete/${id}`, { method: 'POST' });
+            if (res.ok) {
+                window.location.reload();
+            } else {
+                alert('Failed to delete take');
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Error deleting take');
+        }
+    }
+
+
     // Adaptive Polling Logic with Recursive setTimeout
     async function startAdaptivePolling() {
         if (activeTasks.size === 0) {
@@ -575,7 +843,7 @@
 
         const promises = Array.from(activeTasks).map(async (id) => {
             try {
-                const res = await fetch(`/storyboards/${id}/status`);
+                const res = await fetch(`/takes/${id}/status`);
                 const data = await res.json();
 
                 if (data.status) {
@@ -641,10 +909,6 @@
 
                     // Start polling
                     activeTasks.add(id);
-                    // If not already polling (or to reset/ensure it's running), call start
-                    // Since we use recursive setTimeout, we need to check if we should "kick" it.
-                    // A simple way is to just call it, but need to avoid double loops.
-                    // We can use a flag.
                     if (!window.isPolling) {
                         startAdaptivePolling();
                         window.isPolling = true;
@@ -681,10 +945,6 @@
         }
 
         // Initialize Audio Toggle Logic
-        initAudioToggle('model_id', 'new-generate-audio'); // For New Form (name=model_id) - wait, selector for new form is specific
-        // Actually we need to select precise elements.
-        // New Form: select[name="model_id"] inside .space-y-8
-        // But simpler:
         const newModelSelect = document.querySelector('form[action*="/storyboards"] select[name="model_id"]');
         const newAudioCheck = document.getElementById('new-generate-audio');
         if (newModelSelect && newAudioCheck) {
@@ -696,7 +956,6 @@
         const editAudioCheck = document.getElementById('edit-generate-audio');
         if (editModelSelect && editAudioCheck) {
             editModelSelect.addEventListener('change', () => toggleAudioCheckbox(editModelSelect, editAudioCheck));
-            // Initial state set in openEditDialog
         }
     });
 
@@ -712,10 +971,11 @@
     }
 
     // ... (Keep existing Helper functions like openEditDialog, useAsFirstFrame, setupDragDrop) ...
-    // Open Edit Dialog with pre-populated values
+    // Open Edit Dialog with pre-populated values (Updated action to use storyboard ID for Creating NEW take)
     function openEditDialog(id, prompt, modelId, ratio, duration, generateAudio, serviceTier) {
         const dialog = document.getElementById('edit-dialog');
         const form = document.getElementById('edit-form');
+        // UPDATE: The Edit dialog now Creates a NEW TAKE. So action is /storyboards/{id}/update (based on Storyboard ID).
         form.action = `/storyboards/${id}/update`;
         document.getElementById('edit-prompt').value = prompt;
         document.getElementById('edit-model').value = modelId;

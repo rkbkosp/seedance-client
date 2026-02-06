@@ -45,8 +45,16 @@ func CreateStoryboard(c *gin.Context) {
 		serviceTier = "standard" // Default
 	}
 
+	// Create Container Storyboard
 	storyboard := models.Storyboard{
-		ProjectID:     uint(projectID),
+		ProjectID: uint(projectID),
+		CreatedAt: time.Now(),
+	}
+	models.DB.Create(&storyboard)
+
+	// Create Initial Take
+	take := models.Take{
+		StoryboardID:  storyboard.ID,
 		Prompt:        prompt,
 		ModelID:       modelID,
 		Ratio:         ratio,
@@ -54,10 +62,11 @@ func CreateStoryboard(c *gin.Context) {
 		GenerateAudio: generateAudio,
 		ServiceTier:   serviceTier,
 		Status:        "Draft",
+		CreatedAt:     time.Now(),
 	}
 
 	if serviceTier == "flex" {
-		storyboard.ExpiresAfter = 86400 // 24 hours
+		take.ExpiresAfter = 86400 // 24 hours
 	}
 
 	// Handle File Uploads
@@ -66,7 +75,7 @@ func CreateStoryboard(c *gin.Context) {
 		filename := uuid.New().String() + filepath.Ext(firstFrame.Filename)
 		dst := filepath.Join("uploads", filename)
 		c.SaveUploadedFile(firstFrame, dst)
-		storyboard.FirstFramePath = dst
+		take.FirstFramePath = dst
 	}
 
 	lastFrame, _ := c.FormFile("last_frame")
@@ -74,10 +83,10 @@ func CreateStoryboard(c *gin.Context) {
 		filename := uuid.New().String() + filepath.Ext(lastFrame.Filename)
 		dst := filepath.Join("uploads", filename)
 		c.SaveUploadedFile(lastFrame, dst)
-		storyboard.LastFramePath = dst
+		take.LastFramePath = dst
 	}
 
-	models.DB.Create(&storyboard)
+	models.DB.Create(&take)
 	c.Redirect(http.StatusFound, fmt.Sprintf("/projects/%d", projectID))
 }
 
@@ -85,27 +94,22 @@ func DeleteStoryboard(c *gin.Context) {
 	id := c.Param("sid")
 	var sb models.Storyboard
 	models.DB.First(&sb, id)
-	models.DB.Delete(&sb)
+	models.DB.Delete(&sb) // Cascades to Takes
 	c.Redirect(http.StatusFound, fmt.Sprintf("/projects/%d", sb.ProjectID))
 }
 
-func GenerateVideo(c *gin.Context) {
-	id := c.Param("sid")
-	var sb models.Storyboard
-	if err := models.DB.First(&sb, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Storyboard not found"})
+func GenerateTakeVideo(c *gin.Context) {
+	id := c.Param("tid")
+	var take models.Take
+	if err := models.DB.First(&take, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Take not found"})
 		return
 	}
 
-	// Prepare Image URLs (Need to be accessible by Volcengine if using URL, but API docs support base64 too?)
-	// User request says: "支持上传本地图片，自动转 Base64 或上传到服务端".
-	// The API docs createReq show "ImageURL" struct. Looking at "图生视频base64" in user request,
-	// it shows "url": "data:image/png;base64,...". So we can pass Base64 data URI as the URL.
-
 	var firstFrameURL, lastFrameURL string
 
-	if sb.FirstFramePath != "" {
-		b64, err := imageToBase64(sb.FirstFramePath)
+	if take.FirstFramePath != "" {
+		b64, err := imageToBase64(take.FirstFramePath)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process first frame"})
 			return
@@ -113,8 +117,8 @@ func GenerateVideo(c *gin.Context) {
 		firstFrameURL = b64
 	}
 
-	if sb.LastFramePath != "" {
-		b64, err := imageToBase64(sb.LastFramePath)
+	if take.LastFramePath != "" {
+		b64, err := imageToBase64(take.LastFramePath)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process last frame"})
 			return
@@ -122,93 +126,84 @@ func GenerateVideo(c *gin.Context) {
 		lastFrameURL = b64
 	}
 
-	taskID, err := volcService.CreateVideoTask(sb.ModelID, sb.Prompt, firstFrameURL, lastFrameURL, sb.Ratio, sb.Duration, sb.GenerateAudio, sb.ServiceTier, sb.ExpiresAfter)
+	taskID, err := volcService.CreateVideoTask(take.ModelID, take.Prompt, firstFrameURL, lastFrameURL, take.Ratio, take.Duration, take.GenerateAudio, take.ServiceTier, take.ExpiresAfter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		sb.Status = "Failed"
-		models.DB.Save(&sb)
+		take.Status = "Failed"
+		models.DB.Save(&take)
 		return
 	}
 
-	sb.TaskID = taskID
-	sb.Status = "Running" // Or Queued
-	models.DB.Save(&sb)
+	take.TaskID = taskID
+	take.Status = "Running"
+	models.DB.Save(&take)
 
 	c.JSON(http.StatusOK, gin.H{"status": "submitted", "task_id": taskID})
 }
 
-func GetStoryboardStatus(c *gin.Context) {
-	id := c.Param("sid")
-	var sb models.Storyboard
-	if err := models.DB.First(&sb, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Storyboard not found"})
+func GetTakeStatus(c *gin.Context) {
+	id := c.Param("tid")
+	var take models.Take
+	if err := models.DB.First(&take, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Take not found"})
 		return
 	}
 
-	if sb.TaskID == "" {
-		c.JSON(http.StatusOK, gin.H{"status": sb.Status})
+	if take.TaskID == "" {
+		c.JSON(http.StatusOK, gin.H{"status": take.Status})
 		return
 	}
 
-	// Calculate poll interval
-	pollInterval := 3000 // Default 3s
-	if sb.ServiceTier == "flex" {
-		// If created more than 10 mins ago, slow down polling
-		if time.Since(sb.CreatedAt) > 10*time.Minute {
-			pollInterval = 60000 // 60s
+	pollInterval := 3000
+	if take.ServiceTier == "flex" {
+		if time.Since(take.CreatedAt) > 10*time.Minute {
+			pollInterval = 60000
 		} else {
-			pollInterval = 10000 // 10s
+			pollInterval = 10000
 		}
 	}
 
-	// Call API to check status
-	resp, err := volcService.GetTaskStatus(sb.TaskID)
-	// API docs for callback: "queued", "running", "succeeded", "failed", "expired".
-	// GetTask response content should have Status.
+	resp, err := volcService.GetTaskStatus(take.TaskID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"status": sb.Status, "error": err.Error()}) // Don't fail the request, just return old status
+		c.JSON(http.StatusOK, gin.H{"status": take.Status, "error": err.Error()})
 		return
 	}
 
-	// Update DB - normalize status to Title case for template compatibility
 	if resp.Status != "" {
-		// Normalize status: API returns lowercase, template expects Title case
 		switch strings.ToLower(resp.Status) {
 		case "succeeded":
-			sb.Status = "Succeeded"
+			take.Status = "Succeeded"
 		case "failed":
-			sb.Status = "Failed"
+			take.Status = "Failed"
 		case "running":
-			sb.Status = "Running"
+			take.Status = "Running"
 		case "queued":
-			sb.Status = "Queued"
+			take.Status = "Queued"
 		default:
-			sb.Status = resp.Status
+			take.Status = resp.Status
 		}
 	}
 
-	if sb.Status == "Succeeded" {
-		// Content is a struct with VideoURL and LastFrameURL
+	if take.Status == "Succeeded" {
 		if resp.Content.VideoURL != "" {
-			sb.VideoURL = resp.Content.VideoURL
+			take.VideoURL = resp.Content.VideoURL
 		}
 		if resp.Content.LastFrameURL != "" {
-			sb.LastFrameURL = resp.Content.LastFrameURL
+			take.LastFrameURL = resp.Content.LastFrameURL
 		}
-		// Capture Token Usage
-		sb.TokenUsage = resp.Usage.CompletionTokens
+		take.TokenUsage = resp.Usage.CompletionTokens
 	}
 
-	models.DB.Save(&sb)
+	models.DB.Save(&take)
 	c.JSON(http.StatusOK, gin.H{
-		"status":         sb.Status,
-		"video_url":      sb.VideoURL,
-		"last_frame_url": sb.LastFrameURL,
+		"status":         take.Status,
+		"video_url":      take.VideoURL,
+		"last_frame_url": take.LastFrameURL,
 		"poll_interval":  pollInterval,
 	})
 }
 
-// Helper
+// Helper (unchanged)
 func imageToBase64(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -216,14 +211,12 @@ func imageToBase64(path string) (string, error) {
 	}
 	defer file.Close()
 
-	// Read entire file into byte slice
 	bytes, err := io.ReadAll(file)
 	if err != nil {
 		return "", err
 	}
 
-	// Determine mime type (simple extension check)
-	mimeType := "image/png" // default
+	mimeType := "image/png"
 	if strings.HasSuffix(strings.ToLower(path), ".jpg") || strings.HasSuffix(strings.ToLower(path), ".jpeg") {
 		mimeType = "image/jpeg"
 	}
@@ -237,79 +230,158 @@ func UpdateStoryboard(c *gin.Context) {
 
 	id := c.Param("sid")
 	var sb models.Storyboard
-	if err := models.DB.First(&sb, id).Error; err != nil {
+	if err := models.DB.Preload("Takes").First(&sb, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Storyboard not found"})
 		return
 	}
 
-	// Update fields
-	prompt := c.PostForm("prompt")
-	if prompt != "" {
-		sb.Prompt = prompt
+	// Create New Take based on latest or active?
+	// We'll create a new Take with fields from Form, defaulting to copying latest take if form is missing files?
+	// Actually, the form submit allows partial updates? No, the edit form sends everything.
+	// But files (frames) are optional. If not provided, we should copy from the previous take?
+	// The requirement is "Config saved as a Take".
+	// Yes, if I edit a take and don't change the image, I expect the new take to still have the image.
+
+	// Find "Previous" Take to copy from
+	var prevTake models.Take
+	if len(sb.Takes) > 0 {
+		prevTake = sb.Takes[len(sb.Takes)-1] // Assuming order
 	}
 
-	modelID := c.PostForm("model_id")
-	if modelID != "" {
-		sb.ModelID = modelID
+	newTake := models.Take{
+		StoryboardID:   sb.ID,
+		Prompt:         prevTake.Prompt,
+		ModelID:        prevTake.ModelID,
+		Ratio:          prevTake.Ratio,
+		Duration:       prevTake.Duration,
+		ServiceTier:    prevTake.ServiceTier,
+		ExpiresAfter:   prevTake.ExpiresAfter,
+		FirstFramePath: prevTake.FirstFramePath,
+		LastFramePath:  prevTake.LastFramePath,
+		Status:         "Draft",
+		CreatedAt:      time.Now(),
 	}
 
-	ratio := c.PostForm("ratio")
-	if ratio != "" {
-		sb.Ratio = ratio
+	// Update with Form Data
+	if val := c.PostForm("prompt"); val != "" {
+		newTake.Prompt = val
 	}
-
-	durationStr := c.PostForm("duration")
-	if durationStr != "" {
-		duration, _ := strconv.Atoi(durationStr)
-		sb.Duration = duration
+	if val := c.PostForm("model_id"); val != "" {
+		newTake.ModelID = val
 	}
-
-	generateAudioStr := c.PostForm("generate_audio")
-	if generateAudioStr != "" {
-		sb.GenerateAudio = generateAudioStr == "true"
+	if val := c.PostForm("ratio"); val != "" {
+		newTake.Ratio = val
 	}
-
-	serviceTier := c.PostForm("service_tier")
-	if serviceTier != "" {
-		sb.ServiceTier = serviceTier
-		if serviceTier == "flex" {
-			sb.ExpiresAfter = 86400
+	if val := c.PostForm("duration"); val != "" {
+		newTake.Duration, _ = strconv.Atoi(val)
+	}
+	// Checkbox: If checked, value is "true". If unchecked/missing, value is empty -> false.
+	newTake.GenerateAudio = c.PostForm("generate_audio") == "true"
+	if val := c.PostForm("service_tier"); val != "" {
+		newTake.ServiceTier = val
+		if val == "flex" {
+			newTake.ExpiresAfter = 86400
 		} else {
-			sb.ExpiresAfter = 0
+			newTake.ExpiresAfter = 0
 		}
 	}
 
-	// Handle optional file uploads
+	// Handle optional file uploads (Overwrite copied paths)
 	firstFrame, _ := c.FormFile("first_frame")
 	if firstFrame != nil {
-		// Delete old file if exists
-		if sb.FirstFramePath != "" {
-			os.Remove(sb.FirstFramePath)
-		}
 		filename := uuid.New().String() + filepath.Ext(firstFrame.Filename)
 		dst := filepath.Join("uploads", filename)
 		c.SaveUploadedFile(firstFrame, dst)
-		sb.FirstFramePath = dst
+		newTake.FirstFramePath = dst
 	}
 
 	lastFrame, _ := c.FormFile("last_frame")
 	if lastFrame != nil {
-		// Delete old file if exists
-		if sb.LastFramePath != "" {
-			os.Remove(sb.LastFramePath)
-		}
 		filename := uuid.New().String() + filepath.Ext(lastFrame.Filename)
 		dst := filepath.Join("uploads", filename)
 		c.SaveUploadedFile(lastFrame, dst)
-		sb.LastFramePath = dst
+		newTake.LastFramePath = dst
 	}
 
-	// Reset status to Draft after editing
-	sb.Status = "Draft"
-	sb.TaskID = ""
-	sb.VideoURL = ""
-	sb.LastFrameURL = ""
-
-	models.DB.Save(&sb)
+	models.DB.Create(&newTake)
 	c.Redirect(http.StatusFound, fmt.Sprintf("/projects/%d", sb.ProjectID))
+}
+
+// Additional handlers for Takes
+func ListTakes(c *gin.Context) {
+	sid := c.Param("sid")
+	var takes []models.Take
+	if err := models.DB.Where("storyboard_id = ?", sid).Order("created_at asc").Find(&takes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, takes)
+}
+
+func ToggleGoodTake(c *gin.Context) {
+	id := c.Param("tid")
+	var take models.Take
+	if err := models.DB.First(&take, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Take not found"})
+		return
+	}
+
+	// Calculate new state
+	newState := !take.IsGood
+
+	// If we are marking it as Good, we must unmark all others in this storyboard
+	if newState {
+		models.DB.Model(&models.Take{}).Where("storyboard_id = ? AND id != ?", take.StoryboardID, take.ID).Update("is_good", false)
+	}
+
+	take.IsGood = newState
+	models.DB.Save(&take)
+
+	c.JSON(http.StatusOK, gin.H{"is_good": take.IsGood})
+}
+
+func DeleteTake(c *gin.Context) {
+	id := c.Param("tid")
+
+	// 1. Get the take to know its StoryboardID
+	var take models.Take
+	if err := models.DB.First(&take, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Take not found"})
+		return
+	}
+	storyboardID := take.StoryboardID
+
+	// 2. Delete the take
+	if err := models.DB.Delete(&take).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete take"})
+		return
+	}
+
+	// 3. Check for remaining takes
+	var count int64
+	models.DB.Model(&models.Take{}).Where("storyboard_id = ?", storyboardID).Count(&count)
+
+	// 4. If no takes left, delete the container
+	storyboardDeleted := false
+	if count == 0 {
+		if err := models.DB.Delete(&models.Storyboard{}, storyboardID).Error; err == nil {
+			storyboardDeleted = true
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":            true,
+		"storyboard_deleted": storyboardDeleted,
+		"remaining_takes":    count,
+	})
+}
+
+func GetTake(c *gin.Context) {
+	id := c.Param("tid")
+	var take models.Take
+	if err := models.DB.First(&take, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Take not found"})
+		return
+	}
+	c.JSON(http.StatusOK, take)
 }

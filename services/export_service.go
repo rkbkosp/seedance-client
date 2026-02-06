@@ -188,19 +188,35 @@ func PrepareExportData(storyboards []models.Storyboard) []ExportData {
 	index := 1
 
 	for _, sb := range storyboards {
+		// Find best take
+		var bestTake *models.Take
+		for i := len(sb.Takes) - 1; i >= 0; i-- {
+			if sb.Takes[i].IsGood {
+				bestTake = &sb.Takes[i]
+				break
+			}
+		}
+		if bestTake == nil && len(sb.Takes) > 0 {
+			bestTake = &sb.Takes[len(sb.Takes)-1]
+		}
+
+		if bestTake == nil {
+			continue
+		}
+
 		// Only include succeeded storyboards with valid video URLs
-		if sb.Status != "Succeeded" || sb.VideoURL == "" {
+		if bestTake.Status != "Succeeded" || bestTake.VideoURL == "" {
 			continue
 		}
 
 		// Create filename: {index}_{sanitized_prompt}.mp4
-		sanitized := sanitizeFilename(sb.Prompt)
+		sanitized := sanitizeFilename(bestTake.Prompt)
 		filename := fmt.Sprintf("%03d_%s.mp4", index, sanitized)
 
 		exports = append(exports, ExportData{
 			Filename: filename,
-			VideoURL: sb.VideoURL,
-			Duration: sb.Duration,
+			VideoURL: bestTake.VideoURL,
+			Duration: bestTake.Duration,
 		})
 		index++
 	}

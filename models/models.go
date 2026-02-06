@@ -14,8 +14,18 @@ type Project struct {
 }
 
 type Storyboard struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	ProjectID uint      `json:"project_id"`
+	Takes     []Take    `gorm:"foreignKey:StoryboardID;constraint:OnDelete:CASCADE;" json:"takes"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// Virtual field for the active take (not stored in DB, populated during query)
+	ActiveTake *Take `gorm:"-" json:"active_take,omitempty"`
+}
+
+type Take struct {
 	ID             uint      `gorm:"primaryKey" json:"id"`
-	ProjectID      uint      `json:"project_id"`
+	StoryboardID   uint      `json:"storyboard_id"`
 	Prompt         string    `json:"prompt"`
 	FirstFramePath string    `json:"first_frame_path"` // Local path
 	LastFramePath  string    `json:"last_frame_path"`  // Local path
@@ -30,6 +40,7 @@ type Storyboard struct {
 	ServiceTier    string    `json:"service_tier"`     // "standard" or "flex"
 	TokenUsage     int       `json:"token_usage"`      // Usage.CompletionTokens
 	ExpiresAfter   int64     `json:"expires_after"`
+	IsGood         bool      `json:"is_good"` // "Good Take" marker
 	CreatedAt      time.Time `json:"created_at"`
 }
 

@@ -19,7 +19,11 @@ func main() {
 	r := gin.Default()
 
 	// Load embedded templates
-	tmpl := template.Must(template.New("").ParseFS(templatesFS, "templates/*.html"))
+	tmpl := template.Must(template.New("").Funcs(template.FuncMap{
+		"add": func(a, b int) int {
+			return a + b
+		},
+	}).ParseFS(templatesFS, "templates/*.html"))
 	r.SetHTMLTemplate(tmpl)
 
 	// Static files - uploads still need to be served from disk
@@ -37,11 +41,18 @@ func main() {
 	r.POST("/settings/apikey", handlers.UpdateAPIKey)
 
 	// Storyboard Routes
+	// Storyboard Routes
 	r.POST("/projects/:id/storyboards", handlers.CreateStoryboard)
 	r.POST("/storyboards/delete/:sid", handlers.DeleteStoryboard)
-	r.POST("/storyboards/:sid/generate", handlers.GenerateVideo)
-	r.GET("/storyboards/:sid/status", handlers.GetStoryboardStatus)
 	r.POST("/storyboards/:sid/update", handlers.UpdateStoryboard)
+	r.GET("/storyboards/:sid/takes", handlers.ListTakes)
+
+	// Take Routes
+	r.POST("/takes/:tid/generate", handlers.GenerateTakeVideo)
+	r.GET("/takes/:tid/status", handlers.GetTakeStatus)
+	r.GET("/takes/:tid", handlers.GetTake)
+	r.POST("/takes/:tid/toggle_good", handlers.ToggleGoodTake)
+	r.POST("/takes/delete/:tid", handlers.DeleteTake)
 
 	log.Println("Server starting on :23313")
 	if err := r.Run(":23313"); err != nil {

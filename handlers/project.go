@@ -13,8 +13,10 @@ func ListProjects(c *gin.Context) {
 	models.DB.Order("created_at desc").Find(&projects)
 
 	// Calculate Global Stats
-	var storyboards []models.Storyboard
-	models.DB.Where("status = ?", "Succeeded").Find(&storyboards)
+	var takes []models.Take
+	// Join with Storyboard to ensure we only count takes for existing storyboards?
+	// Or just query takes.
+	models.DB.Where("status = ?", "Succeeded").Find(&takes)
 
 	var stats struct {
 		TotalVideos       int
@@ -25,11 +27,11 @@ func ListProjects(c *gin.Context) {
 		TotalSavings      float64
 	}
 
-	stats.TotalVideos = len(storyboards)
+	stats.TotalVideos = len(takes)
 
-	for _, sb := range storyboards {
+	for _, take := range takes {
 		// Count by Model
-		is15Pro := sb.ModelID == "doubao-seedance-1-5-pro-251215"
+		is15Pro := take.ModelID == "doubao-seedance-1-5-pro-251215"
 		if is15Pro {
 			stats.TotalVideos15Pro++
 		} else {
@@ -37,7 +39,7 @@ func ListProjects(c *gin.Context) {
 		}
 
 		// Token Usage
-		stats.TotalTokenUsage += sb.TokenUsage
+		stats.TotalTokenUsage += take.TokenUsage
 
 		// Calculate Cost
 		var pricePerMillion float64
@@ -45,14 +47,14 @@ func ListProjects(c *gin.Context) {
 		// Determine Price based on Model, Audio, and Tier
 		if is15Pro {
 			// 1.5 Pro
-			if sb.GenerateAudio {
-				if sb.ServiceTier == "flex" {
+			if take.GenerateAudio {
+				if take.ServiceTier == "flex" {
 					pricePerMillion = 8.0
 				} else {
 					pricePerMillion = 16.0
 				}
 			} else { // Silent
-				if sb.ServiceTier == "flex" {
+				if take.ServiceTier == "flex" {
 					pricePerMillion = 4.0
 				} else {
 					pricePerMillion = 8.0
@@ -60,14 +62,14 @@ func ListProjects(c *gin.Context) {
 			}
 		} else {
 			// 1.0 Pro Fast
-			if sb.ServiceTier == "flex" {
+			if take.ServiceTier == "flex" {
 				pricePerMillion = 2.1
 			} else {
 				pricePerMillion = 4.2
 			}
 		}
 
-		cost := (float64(sb.TokenUsage) / 1000000.0) * pricePerMillion
+		cost := (float64(take.TokenUsage) / 1000000.0) * pricePerMillion
 		stats.TotalCost += cost
 
 		// Calculate Savings
@@ -107,10 +109,32 @@ func DeleteProject(c *gin.Context) {
 func GetProject(c *gin.Context) {
 	id := c.Param("id")
 	var project models.Project
-	if err := models.DB.Preload("Storyboards").First(&project, id).Error; err != nil {
+	if err := models.DB.Preload("Storyboards.Takes").First(&project, id).Error; err != nil {
 		c.String(http.StatusNotFound, "Project not found")
 		return
 	}
+
+	// Populate Active Take
+	// Logic: "Good Take" (latest) > "Latest Created"
+	for i := range project.Storyboards {
+		sb := &project.Storyboards[i]
+		if len(sb.Takes) > 0 {
+			var bestTake *models.Take
+			// Find latest Good Take
+			for j := len(sb.Takes) - 1; j >= 0; j-- {
+				if sb.Takes[j].IsGood {
+					bestTake = &sb.Takes[j]
+					break
+				}
+			}
+			// If no Good Take, use the very last one (assumed sorted by ID/Create due to append order, or sort explicitly if needed. GORM loads assoc key order usually)
+			if bestTake == nil {
+				bestTake = &sb.Takes[len(sb.Takes)-1]
+			}
+			sb.ActiveTake = bestTake
+		}
+	}
+
 	c.HTML(http.StatusOK, "storyboard.html", gin.H{
 		"Project": project,
 	})
@@ -147,7 +171,7 @@ func LoadAPIKeyFromCookie() gin.HandlerFunc {
 func ExportProject(c *gin.Context) {
 	id := c.Param("id")
 	var project models.Project
-	if err := models.DB.Preload("Storyboards").First(&project, id).Error; err != nil {
+	if err := models.DB.Preload("Storyboards.Takes").First(&project, id).Error; err != nil {
 		c.String(404, "Project not found")
 		return
 	}
