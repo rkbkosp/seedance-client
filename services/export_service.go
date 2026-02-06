@@ -2,9 +2,11 @@ package services
 
 import (
 	"archive/zip"
+	"encoding/binary"
 	"encoding/xml"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -103,14 +105,14 @@ func sanitizeFilename(s string) string {
 }
 
 // GenerateFCPXML creates FCPXML 1.9 content for DaVinci Resolve
-func GenerateFCPXML(projectName string, exports []ExportData) ([]byte, error) {
-	// Create format (24fps, 1280x720)
+func GenerateFCPXML(projectName string, exports []ExportData, width, height int, frameDuration string) ([]byte, error) {
+	// Create format
 	format := Format{
 		ID:            "r0",
-		Name:          "FFVideoFormat720p24",
-		FrameDuration: "100/2400s", // 24fps
-		Width:         1280,
-		Height:        720,
+		Name:          fmt.Sprintf("FFVideoFormat%dp", height),
+		FrameDuration: frameDuration,
+		Width:         width,
+		Height:        height,
 	}
 
 	// Create assets and clips
@@ -211,8 +213,38 @@ func CreateExportZIP(w io.Writer, projectName string, exports []ExportData) erro
 	zipWriter := zip.NewWriter(w)
 	defer zipWriter.Close()
 
+	// Default properties
+	width, height := 1280, 720
+	frameDuration := "100/2400s" // 24fps default
+
+	// Inspect the first video to get properties if available
+	if len(exports) > 0 {
+		tempFile, err := os.CreateTemp("", "scan_video_*.mp4")
+		if err == nil {
+			defer os.Remove(tempFile.Name()) // Clean up
+			defer tempFile.Close()
+
+			// Download first video header (or full file if small)
+			// For simplicity and correctness, downloading full file to temp is safest to ensure we can seek if needed.
+			// Since videos are short, this is acceptable overhead.
+			if err := DownloadVideo(exports[0].VideoURL, tempFile.Name()); err == nil {
+				// Re-open for reading
+				f, err := os.Open(tempFile.Name())
+				if err == nil {
+					defer f.Close()
+					w, h, fd, err := GetVideoProperties(f)
+					if err == nil {
+						width = w
+						height = h
+						frameDuration = fd
+					}
+				}
+			}
+		}
+	}
+
 	// Generate and add FCPXML
-	fcpxmlData, err := GenerateFCPXML(projectName, exports)
+	fcpxmlData, err := GenerateFCPXML(projectName, exports, width, height, frameDuration)
 	if err != nil {
 		return fmt.Errorf("failed to generate FCPXML: %w", err)
 	}
@@ -234,6 +266,214 @@ func CreateExportZIP(w io.Writer, projectName string, exports []ExportData) erro
 	}
 
 	return nil
+}
+
+// GetVideoProperties attempts to parse MP4 atoms to find resolution and frame rate
+func GetVideoProperties(r io.ReadSeeker) (int, int, string, error) {
+	// Simple atom walker
+	buf := make([]byte, 8)
+	var timescale uint32
+	var width, height int
+
+	// Reset seeker
+	r.Seek(0, io.SeekStart)
+
+	// We need to find moov -> trak -> mdia -> mdhd (for timescale)
+	// and moov -> trak -> tkhd (for width/height)
+	// For FPS, standard FCPXML notation is "100/{fps*100}s" or similar.
+	// Actually FCPXML uses integer math. 25fps = 100/2500s. 24fps = 100/2400s.
+	// timescale / sample_duration = fps.
+
+	// Since full parsing is complex, we will search for specific atoms by walking.
+
+	// Helper to read atoms
+	readAtom := func() (string, int64, error) {
+		if _, err := io.ReadFull(r, buf); err != nil {
+			return "", 0, err
+		}
+		size := uint32(binary.BigEndian.Uint32(buf[0:4]))
+		name := string(buf[4:8])
+		var size64 int64 = int64(size)
+		if size == 1 {
+			// Extended size
+			sysBuf := make([]byte, 8)
+			if _, err := io.ReadFull(r, sysBuf); err != nil {
+				return "", 0, err
+			}
+			size64 = int64(binary.BigEndian.Uint64(sysBuf))
+		}
+		return name, size64, nil
+	}
+
+	// Recursive finder is hard without struct definitions.
+	// We will implement a simplified scanner that looks for 'moov' and reads it into memory if small enough,
+	// or seeks into it.
+
+	// Better approach: Use a proper function that takes a limit.
+
+	fileSize, _ := r.Seek(0, io.SeekEnd)
+	r.Seek(0, io.SeekStart)
+
+	var parseAtoms func(offset int64, limit int64) error
+	parseAtoms = func(offset int64, limit int64) error {
+		current := offset
+		for current < offset+limit {
+			if _, err := r.Seek(current, io.SeekStart); err != nil {
+				return err
+			}
+			name, size, err := readAtom()
+			if err != nil {
+				return err
+			}
+
+			if size == 0 {
+				// Extend to end of file
+				size = fileSize - current
+			}
+
+			payloadStart := current + 8
+			if size == 1 {
+				payloadStart += 8
+			}
+			payloadSize := size - (payloadStart - current)
+
+			switch name {
+			case "moov", "trak", "mdia", "minf", "stbl":
+				// Container atoms, recurse
+				if err := parseAtoms(payloadStart, payloadSize); err != nil {
+					return err
+				}
+			case "mdhd":
+				// Media Header
+				// Version 1 byte, Flags 3 bytes
+				// Creation time 4/8, Mod time 4/8, Timescale 4, Duration 4/8
+				r.Seek(payloadStart, io.SeekStart)
+				header := make([]byte, 4)
+				io.ReadFull(r, header)
+				version := header[0]
+
+				if version == 1 {
+					r.Seek(payloadStart+4+8+8, io.SeekStart) // Skip version+flags + create + mod (8 bytes each)
+				} else {
+					r.Seek(payloadStart+4+4+4, io.SeekStart) // Skip version+flags + create + mod (4 bytes each)
+				}
+
+				// Read Timescale
+				io.ReadFull(r, header)
+				timescale = binary.BigEndian.Uint32(header)
+
+				// Read Duration (just for reference, not strict for FPS)
+				if version == 1 {
+					durBuf := make([]byte, 8)
+					io.ReadFull(r, durBuf)
+					// duration = uint64...
+				} else {
+					io.ReadFull(r, header)
+					// duration = binary.BigEndian.Uint32(header)
+				}
+
+			case "tkhd":
+				// Track Header
+				// Version 1, Flags 3
+				// create/mod...
+				// Width/Height are at fixed offsets
+				// version 0: 84 bytes matrix structure at end-ish
+				// We need to look up spec.
+				// Width and height are 16.16 fixed point values at the end of tkhd.
+				// For version 0: duration is at offset 20 (4 bytes), reserved 12 bytes, layer 2, alt group 2, vol 2, reserved 2, matrix 36 bytes, width 4 bytes, height 4 bytes.
+				// Offset to width: 4(ver/flags) + 4(create) + 4(mod) + 4(trackid) + 4(reserved) + 4(duration) + 8(reserved) + 2(layer) + 2(alt) + 2(vol) + 2(reserved) + 36(matrix) = 76 bytes?
+				// Let's rely on standard offsets relative to payload.
+
+				r.Seek(payloadStart, io.SeekStart)
+				verBuf := make([]byte, 1)
+				io.ReadFull(r, verBuf)
+				version := verBuf[0]
+
+				// Skip to width/height
+				// Ver 0: Width at offset 76 (from start of tkhd data, excluding headers?)
+				// Let's count bytes carefully.
+				// struct {
+				//   ver(1), flags(3)
+				//   creation(4), mod(4), track(4), reserved(4), duration(4)
+				//   reserved(8), layer(2), alt(2), vol(2), reserved(2)
+				//   matrix(36)
+				//   width(4), height(4)
+				// }
+				// 1+3+4+4+4+4+4 + 8+2+2+2+2 + 36 = 76.
+				// Width is at 76, Height at 80.
+
+				// Ver 1: creation(8), mod(8), track(4), reserved(4), duration(8)
+				// 1+3+8+8+4+4+8 + ... same ...
+				// 1+3+8+8+4+4+8 + 8+2+2+2+2 + 36 = 88.
+
+				var seekOffset int64 = 76
+				if version == 1 {
+					seekOffset = 88
+				}
+
+				r.Seek(payloadStart+seekOffset, io.SeekStart)
+				dimBuf := make([]byte, 8)
+				if _, err := io.ReadFull(r, dimBuf); err == nil {
+					wFixed := binary.BigEndian.Uint32(dimBuf[0:4])
+					hFixed := binary.BigEndian.Uint32(dimBuf[4:8])
+					width = int(wFixed >> 16)
+					height = int(hFixed >> 16)
+				}
+
+			case "stts":
+				// Time-to-sample
+				// Used to calculate frame duration
+				// ver(1), flags(3), count(4)
+				// entries: count, duration
+				// We assume constant frame rate, so first entry is enough.
+
+				// Only if we haven't found a valid fps yet?
+				// But we need to match it with timescale found in the SAME trak > mdia.
+				// This implies we should track context.
+				// For simplicity, we assume the first video track's properties apply.
+
+				r.Seek(payloadStart+4, io.SeekStart) // Skip ver/flags
+				countBuf := make([]byte, 4)
+				io.ReadFull(r, countBuf)
+				// count := binary.BigEndian.Uint32(countBuf)
+
+				// Read first entry
+				// sample_count(4), sample_delta(4)
+				entryBuf := make([]byte, 8)
+				io.ReadFull(r, entryBuf)
+				// sampleCount := binary.BigEndian.Uint32(entryBuf[0:4])
+				sampleDelta := binary.BigEndian.Uint32(entryBuf[4:8])
+
+				if timescale > 0 && sampleDelta > 0 {
+					// Found it!
+					// Normalize frame duration
+					return fmt.Errorf("FOUND_FPS:%s", matchFrameDuration(timescale, sampleDelta))
+				}
+			}
+
+			current += size
+		}
+		return nil
+	}
+
+	// Run parser
+	err := parseAtoms(0, fileSize)
+
+	// Check if specialized error returned (hacky flow control but simple)
+	frameDuration := "100/2500s" // Default fallback if not found
+	if err != nil && strings.HasPrefix(err.Error(), "FOUND_FPS:") {
+		frameDuration = strings.TrimPrefix(err.Error(), "FOUND_FPS:")
+		err = nil
+	}
+
+	if width == 0 {
+		width = 1280
+	}
+	if height == 0 {
+		height = 720
+	}
+
+	return width, height, frameDuration, nil
 }
 
 // addVideoToZip downloads a video and adds it to the ZIP
@@ -349,4 +589,37 @@ func WriteToFile(path string, content []byte) error {
 		return err
 	}
 	return os.WriteFile(path, content, 0644)
+}
+
+// Helper to normalize FPS to standard video rates
+func matchFrameDuration(timescale, sampleDelta uint32) string {
+	fps := float64(timescale) / float64(sampleDelta)
+
+	// Standard rates tolerance
+	tolerance := 0.01
+
+	type StandardRate struct {
+		FPS      float64
+		Duration string
+	}
+
+	rates := []StandardRate{
+		{23.976, "1001/24000s"},
+		{24.0, "100/2400s"},
+		{25.0, "100/2500s"},
+		{29.97, "1001/30000s"},
+		{30.0, "100/3000s"},
+		{50.0, "100/5000s"},
+		{59.94, "1001/60000s"},
+		{60.0, "100/6000s"},
+	}
+
+	for _, r := range rates {
+		if math.Abs(fps-r.FPS) < tolerance {
+			return r.Duration
+		}
+	}
+
+	// Fallback to raw exact fraction
+	return fmt.Sprintf("%d/%ds", sampleDelta, timescale)
 }
