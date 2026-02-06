@@ -40,10 +40,10 @@
             <div class="flex items-center gap-4">
                 <span class="text-lg font-medium text-md-sys-color-on-surface"><span
                         data-i18n="sb.scene">Storyboard</span> {{ .ID }}</span>
-                <span class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide 
+                <span id="sb-status-{{ .ID }}" class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide 
                     {{ if eq .Status " Succeeded" }}bg-green-100 text-green-800 {{ else if eq .Status "Failed"
-                    }}bg-red-100 text-red-800 {{ else if eq .Status "Running" }}bg-blue-100 text-blue-800 {{ else
-                    }}bg-gray-200 text-gray-700{{ end }}">
+                    }}bg-red-100 text-red-800 {{ else if eq .Status "Running" }}bg-blue-100 text-blue-800 {{ else if eq
+                    .Status "Queued" }}bg-blue-100 text-blue-800 {{ else }}bg-gray-200 text-gray-700{{ end }}">
                     {{ .Status }}
                 </span>
             </div>
@@ -121,7 +121,8 @@
             </div>
 
             <!-- Right: Media Output -->
-            <div class="md:w-1/2 bg-black flex items-center justify-center relative min-h-[360px]">
+            <div id="sb-right-col-{{ .ID }}"
+                class="md:w-1/2 bg-black flex items-center justify-center relative min-h-[360px]">
                 {{ if eq .Status "Succeeded" }}
                 <video controls class="w-full h-full max-h-[500px] object-contain" loop>
                     <source src="{{ .VideoURL }}" type="video/mp4">
@@ -162,7 +163,7 @@
                         </svg>
                     </a>
                 </div>
-                {{ else if eq .Status "Running" }}
+                {{ else if or (eq .Status "Running") (eq .Status "Queued") }}
                 <div class="text-white flex flex-col items-center">
                     <div
                         class="w-12 h-12 border-4 border-md-sys-color-primary border-t-transparent rounded-full animate-spin mb-4">
@@ -170,7 +171,7 @@
                     <p class="font-medium tracking-wide" data-i18n="sb.generating">GENERATING SCENE...</p>
                 </div>
                 {{ else if eq .Status "Draft" }}
-                <form action="/storyboards/{{ .ID }}/generate" method="POST" class="generate-form">
+                <form action="/storyboards/{{ .ID }}/generate" method="POST" class="generate-form" data-id="{{ .ID }}">
                     <button type="submit"
                         class="bg-md-sys-color-primary-container text-md-sys-color-on-primary-container px-8 py-4 rounded-full font-bold text-lg shadow-lg hover:shadow-xl hover:scale-105 transition transform flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
@@ -189,7 +190,8 @@
                     </svg>
                     <p class="mt-2 font-bold" data-i18n="sb.failed">Generation Failed</p>
                     <!-- Retry Button -->
-                    <form action="/storyboards/{{ .ID }}/generate" method="POST" class="generate-form mt-4">
+                    <form action="/storyboards/{{ .ID }}/generate" method="POST" class="generate-form mt-4"
+                        data-id="{{ .ID }}">
                         <button type="submit"
                             class="bg-md-sys-color-error text-white px-6 py-2 rounded-full font-medium shadow-md hover:shadow-lg hover:scale-105 transition transform flex items-center gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20"
@@ -389,64 +391,252 @@
 </dialog>
 
 <script>
+    // State management for polling
+    const activeTasks = new Set([
+        {{ range .Project.Storyboards }}
+    {{ if or (eq .Status "Running") (eq .Status "Queued") }} {{ .ID }}, {{ end }}
+    {{ end }}
+    ]);
+    let pollInterval = null;
+
+    // UI Component Generators
+    const UI = {
+        runningConfig: () => `
+            <div class="text-white flex flex-col items-center">
+                <div class="w-12 h-12 border-4 border-md-sys-color-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p class="font-medium tracking-wide">GENERATING SCENE...</p>
+            </div>
+        `,
+        succeededConfig: (videoUrl, lastFrameUrl, downloadVideoText, downloadFrameText, useLastFrameText) => `
+            <video controls class="w-full h-full max-h-[500px] object-contain" loop>
+                <source src="${videoUrl}" type="video/mp4">
+            </video>
+            <div class="absolute bottom-4 right-4 flex gap-2">
+                ${lastFrameUrl ? `
+                <button type="button" onclick="useAsFirstFrame('${lastFrameUrl}')"
+                    class="bg-md-sys-color-tertiary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-tertiary/90 transition"
+                    title="${useLastFrameText || 'Use last frame'}">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24" fill="currentColor">
+                        <path d="M440-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h160v80H280q-50 0-85 35t-35 85q0 50 35 85t85 35h160v80ZM320-440v-80h320v80H320Zm200 160v-80h160q50 0 85-35t35-85q0-50-35-85t-85-35H520v-80h160q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H520Z" />
+                    </svg>
+                </button>
+                <a href="${lastFrameUrl}" download
+                    class="bg-md-sys-color-secondary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-secondary/90 transition"
+                    title="${downloadFrameText || 'Download frame'}">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24" fill="currentColor">
+                         <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z" />
+                    </svg>
+                </a>
+                ` : ''}
+                <a href="${videoUrl}" download
+                    class="bg-md-sys-color-primary text-white p-3 rounded-full shadow-lg hover:bg-md-sys-color-primary/90 transition"
+                    title="${downloadVideoText || 'Download video'}">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24" fill="currentColor">
+                        <path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
+                    </svg>
+                </a>
+            </div>
+        `,
+        failedConfig: (id) => `
+            <div class="text-md-sys-color-error flex flex-col items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" height="48" viewBox="0 -960 960 960" width="48" fill="currentColor">
+                    <path d="M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z" />
+                </svg>
+                <p class="mt-2 font-bold" data-i18n="sb.failed">Generation Failed</p>
+                <form action="/storyboards/${id}/generate" method="POST" class="generate-form mt-4" data-id="${id}">
+                    <button type="submit"
+                        class="bg-md-sys-color-error text-white px-6 py-2 rounded-full font-medium shadow-md hover:shadow-lg hover:scale-105 transition transform flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20" fill="currentColor">
+                            <path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z" />
+                        </svg>
+                        <span data-i18n="sb.retry">Retry</span>
+                    </button>
+                </form>
+            </div>
+        `
+    };
+
+    // Update Status Badge UI
+    function updateStatusBadge(id, status) {
+        const badge = document.getElementById(`sb-status-${id}`);
+        if (!badge) return;
+
+        badge.textContent = status;
+        // Reset classes
+        badge.className = "px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide";
+
+        switch (status.toLowerCase()) {
+            case 'succeeded':
+                badge.classList.add('bg-green-100', 'text-green-800');
+                break;
+            case 'failed':
+                badge.classList.add('bg-red-100', 'text-red-800');
+                break;
+            case 'running':
+            case 'queued':
+                badge.classList.add('bg-blue-100', 'text-blue-800');
+                break;
+            default:
+                badge.classList.add('bg-gray-200', 'text-gray-700');
+        }
+    }
+
+    // Update Right Column Content
+    function updateRightCol(id, data) {
+        const col = document.getElementById(`sb-right-col-${id}`);
+        if (!col) return;
+
+        const status = data.status.toLowerCase();
+        if (status === 'succeeded') {
+            col.innerHTML = UI.succeededConfig(
+                data.video_url,
+                data.last_frame_url,
+                'Download video',
+                'Download last frame',
+                'Use last frame as first frame'
+            );
+        } else if (status === 'failed') {
+            col.innerHTML = UI.failedConfig(id);
+            // Re-attach listener to new form
+            const newForm = col.querySelector('.generate-form');
+            if (newForm) attachSubmitListener(newForm);
+        } else if (status === 'running' || status === 'queued') {
+            if (!col.innerHTML.includes('animate-spin')) {
+                col.innerHTML = UI.runningConfig();
+            }
+        }
+    }
+
+    // Polling Logic
+    async function startPolling() {
+        if (pollInterval) clearInterval(pollInterval);
+
+        pollInterval = setInterval(async () => {
+            if (activeTasks.size === 0) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+                return;
+            }
+
+            for (const id of activeTasks) {
+                try {
+                    const res = await fetch(`/storyboards/${id}/status`);
+                    const data = await res.json();
+
+                    if (data.status) {
+                        updateStatusBadge(id, data.status);
+                        updateRightCol(id, data);
+
+                        const s = data.status.toLowerCase();
+                        if (s === 'succeeded' || s === 'failed') {
+                            activeTasks.delete(id);
+                        }
+                    }
+                } catch (err) {
+                    console.error('Poll failed for', id, err);
+                }
+            }
+        }, 3000); // 3s interval
+    }
+
+    // Handle Generate Submit
+    function attachSubmitListener(form) {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = form.querySelector('button');
+            const originalContent = btn.innerHTML;
+            const id = parseInt(form.dataset.id);
+
+            // Optimistic UI update
+            btn.disabled = true;
+            btn.innerHTML = `
+                <div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                Starting...
+            `;
+
+            try {
+                const resp = await fetch(form.action, { method: 'POST' });
+                if (resp.ok) {
+                    // Update UI to Running state immediately
+                    updateStatusBadge(id, "Running");
+
+                    const col = document.getElementById(`sb-right-col-${id}`);
+                    if (col) col.innerHTML = UI.runningConfig();
+
+                    // Start polling
+                    activeTasks.add(id);
+                    if (!pollInterval) startPolling();
+
+                } else {
+                    const errData = await resp.json().catch(() => ({}));
+                    alert('Failed to start generation: ' + (errData.error || 'Unknown error'));
+                    btn.disabled = false;
+                    btn.innerHTML = originalContent;
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Network error');
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+            }
+        });
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        // Drag Drop (existing)
+        setupDragDrop('drop-first-frame', 'input-first-frame');
+        setupDragDrop('drop-last-frame', 'input-last-frame');
+
+        // Attach listeners to existing forms
+        document.querySelectorAll('.generate-form').forEach(attachSubmitListener);
+
+        // Resume polling if needed
+        if (activeTasks.size > 0) {
+            startPolling();
+        }
+    });
+
+    // ... (Keep existing Helper functions like openEditDialog, useAsFirstFrame, setupDragDrop) ...
     // Open Edit Dialog with pre-populated values
     function openEditDialog(id, prompt, modelId, ratio, duration) {
         const dialog = document.getElementById('edit-dialog');
         const form = document.getElementById('edit-form');
-
-        // Set form action
         form.action = `/storyboards/${id}/update`;
-
-        // Populate fields
         document.getElementById('edit-prompt').value = prompt;
         document.getElementById('edit-model').value = modelId;
         document.getElementById('edit-ratio').value = ratio;
         document.getElementById('edit-duration').value = duration.toString();
-
         dialog.showModal();
     }
 
-    // Use last frame URL as first frame for new storyboard
     async function useAsFirstFrame(imageUrl) {
         try {
-            // Fetch the image
             const response = await fetch(imageUrl);
             const blob = await response.blob();
-
-            // Create a File object from the blob
             const filename = 'last_frame_' + Date.now() + '.png';
             const file = new File([blob], filename, { type: blob.type || 'image/png' });
-
-            // Set the file on the first frame input
             const input = document.getElementById('input-first-frame');
             const dataTransfer = new DataTransfer();
             dataTransfer.items.add(file);
             input.files = dataTransfer.files;
 
-            // Show preview
             const dropZone = document.getElementById('drop-first-frame');
             const placeholder = dropZone.querySelector('.upload-placeholder');
             const preview = dropZone.querySelector('.preview-img');
-
             preview.src = imageUrl;
             preview.classList.remove('hidden');
             placeholder.classList.add('hidden');
-
-            // Scroll to the new storyboard form
             document.querySelector('.mt-16').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-            // Flash effect to indicate success
             dropZone.classList.add('ring-4', 'ring-md-sys-color-primary');
-            setTimeout(() => {
-                dropZone.classList.remove('ring-4', 'ring-md-sys-color-primary');
-            }, 1500);
+            setTimeout(() => dropZone.classList.remove('ring-4', 'ring-md-sys-color-primary'), 1500);
         } catch (err) {
             console.error('Failed to set first frame:', err);
             alert('Failed to load the last frame image');
         }
     }
 
-    // Drag and Drop functionality for image upload
     function setupDragDrop(dropZoneId, inputId) {
         const dropZone = document.getElementById(dropZoneId);
         const input = document.getElementById(inputId);
@@ -455,15 +645,10 @@
         const placeholder = dropZone.querySelector('.upload-placeholder');
         const preview = dropZone.querySelector('.preview-img');
 
-        // Prevent default drag behaviors
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-            });
+            dropZone.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); });
         });
 
-        // Highlight on drag
         ['dragenter', 'dragover'].forEach(eventName => {
             dropZone.addEventListener(eventName, () => {
                 dropZone.classList.add('border-md-sys-color-primary', 'bg-md-sys-color-primary/10');
@@ -471,7 +656,6 @@
             });
         });
 
-        // Remove highlight on leave/drop
         ['dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, () => {
                 dropZone.classList.remove('border-md-sys-color-primary', 'bg-md-sys-color-primary/10');
@@ -479,11 +663,9 @@
             });
         });
 
-        // Handle drop
         dropZone.addEventListener('drop', (e) => {
             const files = e.dataTransfer.files;
             if (files.length > 0 && files[0].type.startsWith('image/')) {
-                // Create a new DataTransfer to set files on input
                 const dataTransfer = new DataTransfer();
                 dataTransfer.items.add(files[0]);
                 input.files = dataTransfer.files;
@@ -491,11 +673,8 @@
             }
         });
 
-        // Handle file selection via input
         input.addEventListener('change', () => {
-            if (input.files.length > 0) {
-                showPreview(input.files[0], placeholder, preview);
-            }
+            if (input.files.length > 0) showPreview(input.files[0], placeholder, preview);
         });
     }
 
@@ -507,71 +686,6 @@
             placeholder.classList.add('hidden');
         };
         reader.readAsDataURL(file);
-    }
-
-    // Initialize drag-drop for both zones
-    document.addEventListener('DOMContentLoaded', () => {
-        setupDragDrop('drop-first-frame', 'input-first-frame');
-        setupDragDrop('drop-last-frame', 'input-last-frame');
-    });
-
-    // Handle Generate Submit with AJAX to avoid reload
-    document.querySelectorAll('.generate-form').forEach(form => {
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const btn = form.querySelector('button');
-            const originalContent = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = 'Submitting...';
-
-            try {
-                const resp = await fetch(form.action, { method: 'POST' });
-                if (resp.ok) {
-                    window.location.reload();
-                } else {
-                    alert('Failed to start generation');
-                    btn.disabled = false;
-                    btn.innerHTML = originalContent;
-                }
-            } catch (err) {
-                console.error(err);
-                btn.disabled = false;
-                btn.innerHTML = originalContent;
-            }
-        });
-    });
-
-    // Simple Polling for Running/Queued tasks
-    const runningTasks = [
-        {{ range .Project.Storyboards }}
-    {{ if or (eq .Status "Running") (eq .Status "Queued") (eq .Status "running") (eq .Status "queued") }} {{ .ID }}, {{ end }}
-    {{ end }}
-    ].filter(id => id != null);
-
-    if (runningTasks.length > 0) {
-        const interval = setInterval(async () => {
-            let stillRunning = false;
-            for (const id of runningTasks) {
-                try {
-                    const res = await fetch(`/storyboards/${id}/status`);
-                    const data = await res.json();
-                    const status = data.status?.toLowerCase();
-                    if (status === 'succeeded' || status === 'failed') {
-                        // Reload if any task finished
-                        window.location.reload();
-                        return;
-                    }
-                    if (status === 'running' || status === 'queued') {
-                        stillRunning = true;
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
-            }
-            if (!stillRunning) {
-                clearInterval(interval);
-            }
-        }, 3000); // 3 seconds poll
     }
 </script>
 
