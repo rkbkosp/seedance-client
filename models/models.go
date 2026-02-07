@@ -24,24 +24,27 @@ type Storyboard struct {
 }
 
 type Take struct {
-	ID             uint      `gorm:"primaryKey" json:"id"`
-	StoryboardID   uint      `json:"storyboard_id"`
-	Prompt         string    `json:"prompt"`
-	FirstFramePath string    `json:"first_frame_path"` // Local path
-	LastFramePath  string    `json:"last_frame_path"`  // Local path
-	ModelID        string    `json:"model_id"`         // e.g. "doubao-seedance-1-5-pro-251215"
-	Ratio          string    `json:"ratio"`            // "16:9", "adaptive"
-	Duration       int       `json:"duration"`         // 5
-	GenerateAudio  bool      `json:"generate_audio"`   // false
-	TaskID         string    `json:"task_id"`          // Volcano Task ID
-	Status         string    `json:"status"`           // Queued, Running, Succeeded, Failed
-	VideoURL       string    `json:"video_url"`        // Result URL
-	LastFrameURL   string    `json:"last_frame_url"`   // Result Last Frame URL
-	ServiceTier    string    `json:"service_tier"`     // "standard" or "flex"
-	TokenUsage     int       `json:"token_usage"`      // Usage.CompletionTokens
-	ExpiresAfter   int64     `json:"expires_after"`
-	IsGood         bool      `json:"is_good"` // "Good Take" marker
-	CreatedAt      time.Time `json:"created_at"`
+	ID                 uint      `gorm:"primaryKey" json:"id"`
+	StoryboardID       uint      `json:"storyboard_id"`
+	Prompt             string    `json:"prompt"`
+	FirstFramePath     string    `json:"first_frame_path"`      // Local path (uploaded)
+	LastFramePath      string    `json:"last_frame_path"`       // Local path (uploaded)
+	ModelID            string    `json:"model_id"`              // e.g. "doubao-seedance-1-5-pro-251215"
+	Ratio              string    `json:"ratio"`                 // "16:9", "adaptive"
+	Duration           int       `json:"duration"`              // 5
+	GenerateAudio      bool      `json:"generate_audio"`        // false
+	TaskID             string    `json:"task_id"`               // Volcano Task ID
+	Status             string    `json:"status"`                // Queued, Running, Succeeded, Failed
+	VideoURL           string    `json:"video_url"`             // Remote Result URL
+	LastFrameURL       string    `json:"last_frame_url"`        // Remote Result Last Frame URL
+	LocalVideoPath     string    `json:"local_video_path"`      // Local cached video path
+	LocalLastFramePath string    `json:"local_last_frame_path"` // Local cached last frame path
+	DownloadStatus     string    `json:"download_status"`       // pending, downloading, completed, failed
+	ServiceTier        string    `json:"service_tier"`          // "standard" or "flex"
+	TokenUsage         int       `json:"token_usage"`           // Usage.CompletionTokens
+	ExpiresAfter       int64     `json:"expires_after"`
+	IsGood             bool      `json:"is_good"` // "Good Take" marker
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 var DB *gorm.DB

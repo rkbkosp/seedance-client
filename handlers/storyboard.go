@@ -170,6 +170,7 @@ func GetTakeStatus(c *gin.Context) {
 		return
 	}
 
+	previousStatus := take.Status
 	if resp.Status != "" {
 		switch strings.ToLower(resp.Status) {
 		case "succeeded":
@@ -193,14 +194,24 @@ func GetTakeStatus(c *gin.Context) {
 			take.LastFrameURL = resp.Content.LastFrameURL
 		}
 		take.TokenUsage = resp.Usage.CompletionTokens
+
+		// Trigger async download if just succeeded
+		if previousStatus != "Succeeded" && take.DownloadStatus != "completed" {
+			take.DownloadStatus = "pending"
+			models.DB.Save(&take)
+			services.DownloadTakeAssetsAsync(take.ID)
+		}
 	}
 
 	models.DB.Save(&take)
+
+	// Return effective URLs (prefer local paths)
 	c.JSON(http.StatusOK, gin.H{
-		"status":         take.Status,
-		"video_url":      take.VideoURL,
-		"last_frame_url": take.LastFrameURL,
-		"poll_interval":  pollInterval,
+		"status":          take.Status,
+		"video_url":       services.GetEffectiveVideoURL(&take),
+		"last_frame_url":  services.GetEffectiveLastFrameURL(&take),
+		"poll_interval":   pollInterval,
+		"download_status": take.DownloadStatus,
 	})
 }
 
@@ -394,5 +405,28 @@ func GetTake(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Take not found"})
 		return
 	}
-	c.JSON(http.StatusOK, take)
+	// Build response with effective URLs
+	c.JSON(http.StatusOK, gin.H{
+		"id":                    take.ID,
+		"storyboard_id":         take.StoryboardID,
+		"prompt":                take.Prompt,
+		"first_frame_path":      take.FirstFramePath,
+		"last_frame_path":       take.LastFramePath,
+		"model_id":              take.ModelID,
+		"ratio":                 take.Ratio,
+		"duration":              take.Duration,
+		"generate_audio":        take.GenerateAudio,
+		"task_id":               take.TaskID,
+		"status":                take.Status,
+		"video_url":             services.GetEffectiveVideoURL(&take),
+		"last_frame_url":        services.GetEffectiveLastFrameURL(&take),
+		"local_video_path":      take.LocalVideoPath,
+		"local_last_frame_path": take.LocalLastFramePath,
+		"download_status":       take.DownloadStatus,
+		"service_tier":          take.ServiceTier,
+		"token_usage":           take.TokenUsage,
+		"expires_after":         take.ExpiresAfter,
+		"is_good":               take.IsGood,
+		"created_at":            take.CreatedAt,
+	})
 }

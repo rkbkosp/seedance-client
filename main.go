@@ -5,6 +5,7 @@ import (
 	"log"
 	"seedance-client/handlers"
 	"seedance-client/models"
+	"seedance-client/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -16,6 +17,9 @@ func main() {
 	// Initialize Services
 	handlers.InitService()
 
+	// Start background asset downloader
+	services.StartBackgroundDownloader()
+
 	r := gin.Default()
 
 	// Load embedded templates
@@ -26,8 +30,9 @@ func main() {
 	}).ParseFS(templatesFS, "templates/*.html"))
 	r.SetHTMLTemplate(tmpl)
 
-	// Static files - uploads still need to be served from disk
+	// Static files - uploads and downloads need to be served from disk
 	r.Static("/uploads", "./uploads")
+	r.Static("/downloads", "./downloads")
 
 	// Middleware to load API key from cookie
 	r.Use(handlers.LoadAPIKeyFromCookie())
