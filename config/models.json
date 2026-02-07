@@ -1,0 +1,28 @@
+{
+    "models": [
+        {
+            "id": "doubao-seedance-1-5-pro-251215",
+            "name": "1.5 Pro",
+            "supports_audio": true,
+            "default": true,
+            "pricing": {
+                "standard": 8.0,
+                "standard_audio": 16.0,
+                "flex": 4.0,
+                "flex_audio": 8.0,
+                "platform_price": 2.56
+            }
+        },
+        {
+            "id": "doubao-seedance-1-0-pro-fast-251015",
+            "name": "1.0 Fast",
+            "supports_audio": false,
+            "default": false,
+            "pricing": {
+                "standard": 4.2,
+                "flex": 2.1,
+                "platform_price": 0.64
+            }
+        }
+    ]
+}

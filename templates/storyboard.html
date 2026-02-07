@@ -300,8 +300,9 @@
                         <span class="label-text text-xs" data-i18n="sb.model">Model</span>
                     </label>
                     <select name="model_id" class="select select-bordered select-sm w-full">
-                        <option value="doubao-seedance-1-5-pro-251215">1.5 Pro</option>
-                        <option value="doubao-seedance-1-0-pro-fast-251015">1.0 Fast</option>
+                        {{ range .Models }}
+                        <option value="{{ .ID }}" {{ if .Default }}selected{{ end }}>{{ .Name }}</option>
+                        {{ end }}
                     </select>
                 </div>
                 <!-- Ratio -->
@@ -343,7 +344,7 @@
                     <label class="label cursor-pointer justify-start gap-2 bg-base-200 rounded-md px-2 h-8">
                         <input type="checkbox" name="generate_audio" id="new-generate-audio" value="true"
                             class="toggle toggle-primary toggle-sm">
-                        <span class="label-text text-xs">1.5 Pro</span>
+                        <span class="label-text text-xs">Audio</span>
                     </label>
                 </div>
             </div>
@@ -377,8 +378,9 @@
                         <span class="label-text text-xs" data-i18n="sb.model">Model</span>
                     </label>
                     <select id="edit-model" name="model_id" class="select select-bordered select-sm w-full">
-                        <option value="doubao-seedance-1-5-pro-251215">1.5 Pro</option>
-                        <option value="doubao-seedance-1-0-pro-fast-251015">1.0 Fast</option>
+                        {{ range .Models }}
+                        <option value="{{ .ID }}">{{ .Name }}</option>
+                        {{ end }}
                     </select>
                 </div>
                 <!-- Ratio -->
@@ -423,7 +425,7 @@
                     <label class="label cursor-pointer justify-start gap-2 bg-base-200 rounded-md px-2 h-8">
                         <input type="checkbox" name="generate_audio" id="edit-generate-audio" value="true"
                             class="toggle toggle-primary toggle-sm">
-                        <span class="label-text text-xs">1.5 Pro</span>
+                        <span class="label-text text-xs">Audio</span>
                     </label>
                 </div>
             </div>
@@ -715,10 +717,13 @@
         if (editModelSelect && editAudioCheck) editModelSelect.addEventListener('change', () => toggleAudioCheckbox(editModelSelect, editAudioCheck));
     });
 
+    // Audio-supported model IDs from config
+    const audioSupportedModels = [{{ range $i, $id := .AudioSupportedModels }}{{ if $i }}, {{ end }}"{{ $id }}"{{ end }}];
+
     function toggleAudioCheckbox(modelSelect, audioCheckbox) {
-        const is15Pro = modelSelect.value === 'doubao-seedance-1-5-pro-251215';
-        audioCheckbox.disabled = !is15Pro;
-        if (!is15Pro) { audioCheckbox.checked = false; audioCheckbox.parentElement.classList.add('opacity-50', 'cursor-not-allowed'); }
+        const supportsAudio = audioSupportedModels.includes(modelSelect.value);
+        audioCheckbox.disabled = !supportsAudio;
+        if (!supportsAudio) { audioCheckbox.checked = false; audioCheckbox.parentElement.classList.add('opacity-50', 'cursor-not-allowed'); }
         else audioCheckbox.parentElement.classList.remove('opacity-50', 'cursor-not-allowed');
     }
 
