@@ -116,25 +116,27 @@
                         <p class="text-sm text-base-content leading-relaxed">{{ .Prompt }}</p>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-3">
-                        {{ if .FirstFramePath }}
-                        <div class="relative group">
+                    <div id="frame-grid-{{ .ID }}" class="grid grid-cols-2 gap-3">
+                        <div id="first-frame-wrapper-{{ .ID }}"
+                            class="relative group {{ if not .FirstFramePath }}hidden{{ end }}">
                             <label class="block text-xs font-bold text-base-content/60 mb-1 uppercase"
                                 data-i18n="sb.first_frame">First Frame</label>
                             <div class="rounded-md overflow-hidden border border-base-content/10">
-                                <img src="/{{ .FirstFramePath }}" class="w-full h-24 object-cover">
+                                <img id="first-frame-img-{{ .ID }}"
+                                    src="{{ if .FirstFramePath }}/{{ .FirstFramePath }}{{ end }}"
+                                    class="w-full h-24 object-cover">
                             </div>
                         </div>
-                        {{ end }}
-                        {{ if .LastFramePath }}
-                        <div class="relative group">
+                        <div id="last-frame-wrapper-{{ .ID }}"
+                            class="relative group {{ if not .LastFramePath }}hidden{{ end }}">
                             <label class="block text-xs font-bold text-base-content/60 mb-1 uppercase"
                                 data-i18n="sb.last_frame">Last Frame</label>
                             <div class="rounded-md overflow-hidden border border-base-content/10">
-                                <img src="/{{ .LastFramePath }}" class="w-full h-24 object-cover">
+                                <img id="last-frame-img-{{ .ID }}"
+                                    src="{{ if .LastFramePath }}/{{ .LastFramePath }}{{ end }}"
+                                    class="w-full h-24 object-cover">
                             </div>
                         </div>
-                        {{ end }}
                     </div>
 
                     <div class="flex flex-wrap gap-1 mt-2">
@@ -576,6 +578,7 @@
     function renderTakeContent(sbId, take, version) {
         const contentDiv = document.getElementById(`take-content-${sbId}`);
         if (!contentDiv) return;
+        contentDiv.setAttribute('data-take-id', take.id);
         if (!version) version = contentDiv.getAttribute('data-current-version') || '?';
         const headerTitle = contentDiv.querySelector('.text-sm.font-semibold');
         if (headerTitle) headerTitle.innerHTML = `<span data-i18n="sb.scene">Version</span> ${version}`;
@@ -585,12 +588,57 @@
         if (editBtn) editBtn.setAttribute('onclick', `openEditDialog(${take.storyboard_id}, '${take.prompt.replace(/'/g, "\\'")}', '${take.model_id}', '${take.ratio}', ${take.duration}, ${take.generate_audio}, '${take.service_tier}', '${take.first_frame_path || ""}', '${take.last_frame_path || ""}')`);
         const delBtn = contentDiv.querySelector('button[onclick^="deleteTake"]');
         if (delBtn) delBtn.setAttribute('onclick', `deleteTake(${take.id})`);
-        updateStatusBadge(take.id, take.status);
+
+        // Update First/Last Frame images (query within contentDiv context)
+        const frameGrid = contentDiv.querySelector('[id^="frame-grid-"]');
+        if (frameGrid) {
+            const firstFrameWrapper = frameGrid.querySelector('[id^="first-frame-wrapper-"]');
+            const firstFrameImg = frameGrid.querySelector('[id^="first-frame-img-"]');
+            if (firstFrameWrapper && firstFrameImg) {
+                if (take.first_frame_path) {
+                    firstFrameWrapper.classList.remove('hidden');
+                    firstFrameImg.src = '/' + take.first_frame_path;
+                } else {
+                    firstFrameWrapper.classList.add('hidden');
+                    firstFrameImg.src = '';
+                }
+            }
+            const lastFrameWrapper = frameGrid.querySelector('[id^="last-frame-wrapper-"]');
+            const lastFrameImg = frameGrid.querySelector('[id^="last-frame-img-"]');
+            if (lastFrameWrapper && lastFrameImg) {
+                if (take.last_frame_path) {
+                    lastFrameWrapper.classList.remove('hidden');
+                    lastFrameImg.src = '/' + take.last_frame_path;
+                } else {
+                    lastFrameWrapper.classList.add('hidden');
+                    lastFrameImg.src = '';
+                }
+            }
+        }
+
+        // Update status badge (query within contentDiv context)
+        const statusBadge = contentDiv.querySelector('[id^="sb-status-"]');
+        if (statusBadge) {
+            statusBadge.id = `sb-status-${take.id}`;
+            statusBadge.textContent = take.status;
+            statusBadge.className = 'badge badge-sm';
+            switch (take.status.toLowerCase()) {
+                case 'succeeded': statusBadge.classList.add('badge-success'); break;
+                case 'failed': statusBadge.classList.add('badge-error'); break;
+                case 'running': case 'queued': statusBadge.classList.add('badge-info'); break;
+                default: statusBadge.classList.add('badge-ghost');
+            }
+        }
+
+        // Update right column ID for polling updates
+        const rightCol = contentDiv.querySelector('[id^="sb-right-col-"]');
+        if (rightCol) rightCol.id = `sb-right-col-${take.id}`;
+
         const promptP = contentDiv.querySelector('p.text-sm.leading-relaxed');
         if (promptP) promptP.textContent = take.prompt;
         const chips = contentDiv.querySelectorAll('.badge.badge-secondary');
         if (chips.length >= 4) { chips[0].textContent = take.model_id; chips[1].textContent = take.service_tier === 'flex' ? 'Flex' : 'Standard'; chips[2].textContent = take.ratio; chips[3].textContent = take.duration + 's'; }
-        updateRightCol(sbId, take);
+        updateRightCol(take.id, take);
     }
 
     function updateGoodBtnStyle(btn, isGood) {

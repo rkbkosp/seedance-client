@@ -6,6 +6,7 @@ import (
 	"seedance-client/services"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func ListProjects(c *gin.Context) {
@@ -109,7 +110,15 @@ func DeleteProject(c *gin.Context) {
 func GetProject(c *gin.Context) {
 	id := c.Param("id")
 	var project models.Project
-	if err := models.DB.Preload("Storyboards.Takes").First(&project, id).Error; err != nil {
+	// Sort Takes by CreatedAt manually or via preload order?
+	// Preload with Order is cleaner.
+	err := models.DB.Preload("Storyboards", func(db *gorm.DB) *gorm.DB {
+		return db.Order("id asc") // Assuming Storyboards order by ID
+	}).Preload("Storyboards.Takes", func(db *gorm.DB) *gorm.DB {
+		return db.Order("created_at asc")
+	}).First(&project, id).Error
+
+	if err != nil {
 		c.String(http.StatusNotFound, "Project not found")
 		return
 	}

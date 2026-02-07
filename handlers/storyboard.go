@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 var volcService *services.VolcEngineService
@@ -230,7 +231,9 @@ func UpdateStoryboard(c *gin.Context) {
 
 	id := c.Param("sid")
 	var sb models.Storyboard
-	if err := models.DB.Preload("Takes").First(&sb, id).Error; err != nil {
+	if err := models.DB.Preload("Takes", func(db *gorm.DB) *gorm.DB {
+		return db.Order("created_at asc")
+	}).First(&sb, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Storyboard not found"})
 		return
 	}
