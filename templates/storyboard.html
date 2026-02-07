@@ -74,7 +74,7 @@
                 <div class="flex items-center gap-1">
                     <!-- Edit Button -->
                     <button type="button"
-                        onclick="openEditDialog({{ .StoryboardID }}, '{{ .Prompt }}', '{{ .ModelID }}', '{{ .Ratio }}', {{ .Duration }}, {{ .GenerateAudio }}, '{{ .ServiceTier }}')"
+                        onclick="openEditDialog({{ .StoryboardID }}, '{{ .Prompt }}', '{{ .ModelID }}', '{{ .Ratio }}', {{ .Duration }}, {{ .GenerateAudio }}, '{{ .ServiceTier }}', '{{ .FirstFramePath }}', '{{ .LastFramePath }}')"
                         class="btn btn-ghost btn-circle btn-xs text-primary" title="Edit & Save as New Take">
                         <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16"
                             fill="currentColor">
@@ -434,6 +434,11 @@
                     </label>
                     <input type="file" name="first_frame" accept="image/*"
                         class="file-input file-input-bordered file-input-sm w-full">
+                    <label class="label cursor-pointer justify-start gap-2 mt-1 hidden" id="first-frame-delete-wrapper">
+                        <input type="checkbox" name="delete_first_frame" value="true"
+                            class="checkbox checkbox-xs checkbox-error">
+                        <span class="label-text text-xs text-error">Remove frame</span>
+                    </label>
                 </div>
                 <!-- Last Frame -->
                 <div class="form-control">
@@ -442,6 +447,11 @@
                     </label>
                     <input type="file" name="last_frame" accept="image/*"
                         class="file-input file-input-bordered file-input-sm w-full">
+                    <label class="label cursor-pointer justify-start gap-2 mt-1 hidden" id="last-frame-delete-wrapper">
+                        <input type="checkbox" name="delete_last_frame" value="true"
+                            class="checkbox checkbox-xs checkbox-error">
+                        <span class="label-text text-xs text-error">Remove frame</span>
+                    </label>
                 </div>
             </div>
 
@@ -572,7 +582,7 @@
         const goodBtn = contentDiv.querySelector('button[onclick^="toggleGoodTake"]');
         if (goodBtn) { goodBtn.setAttribute('onclick', `toggleGoodTake(${take.id}, this)`); updateGoodBtnStyle(goodBtn, take.is_good); }
         const editBtn = contentDiv.querySelector('button[onclick^="openEditDialog"]');
-        if (editBtn) editBtn.setAttribute('onclick', `openEditDialog(${take.storyboard_id}, '${take.prompt.replace(/'/g, "\\'")}', '${take.model_id}', '${take.ratio}', ${take.duration}, ${take.generate_audio}, '${take.service_tier}')`);
+        if (editBtn) editBtn.setAttribute('onclick', `openEditDialog(${take.storyboard_id}, '${take.prompt.replace(/'/g, "\\'")}', '${take.model_id}', '${take.ratio}', ${take.duration}, ${take.generate_audio}, '${take.service_tier}', '${take.first_frame_path || ""}', '${take.last_frame_path || ""}')`);
         const delBtn = contentDiv.querySelector('button[onclick^="deleteTake"]');
         if (delBtn) delBtn.setAttribute('onclick', `deleteTake(${take.id})`);
         updateStatusBadge(take.id, take.status);
@@ -664,7 +674,7 @@
         else audioCheckbox.parentElement.classList.remove('opacity-50', 'cursor-not-allowed');
     }
 
-    function openEditDialog(id, prompt, modelId, ratio, duration, generateAudio, serviceTier) {
+    function openEditDialog(id, prompt, modelId, ratio, duration, generateAudio, serviceTier, firstFramePath, lastFramePath) {
         const dialog = document.getElementById('edit-dialog');
         const form = document.getElementById('edit-form');
         form.action = `/storyboards/${id}/update`;
@@ -676,6 +686,30 @@
         if (stSelect && serviceTier) stSelect.value = serviceTier; else if (stSelect) stSelect.value = 'standard';
         const audioCheckbox = document.getElementById('edit-generate-audio');
         if (audioCheckbox) { audioCheckbox.checked = generateAudio === true || generateAudio === "true"; toggleAudioCheckbox(document.getElementById('edit-model'), audioCheckbox); }
+
+        // Handle First/Last Frame Delete Options
+        const firstDelWrapper = document.getElementById('first-frame-delete-wrapper');
+        const firstDelInput = firstDelWrapper ? firstDelWrapper.querySelector('input') : null;
+        if (firstDelWrapper && firstDelInput) {
+            firstDelInput.checked = false;
+            if (firstFramePath && firstFramePath !== "undefined") {
+                firstDelWrapper.classList.remove('hidden');
+            } else {
+                firstDelWrapper.classList.add('hidden');
+            }
+        }
+
+        const lastDelWrapper = document.getElementById('last-frame-delete-wrapper');
+        const lastDelInput = lastDelWrapper ? lastDelWrapper.querySelector('input') : null;
+        if (lastDelWrapper && lastDelInput) {
+            lastDelInput.checked = false;
+            if (lastFramePath && lastFramePath !== "undefined") {
+                lastDelWrapper.classList.remove('hidden');
+            } else {
+                lastDelWrapper.classList.add('hidden');
+            }
+        }
+
         dialog.showModal();
     }
 

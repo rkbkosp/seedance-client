@@ -286,6 +286,14 @@ func UpdateStoryboard(c *gin.Context) {
 		}
 	}
 
+	// Handle Deletion Flags (Before uploads, so uploads can overwrite)
+	if c.PostForm("delete_first_frame") == "true" {
+		newTake.FirstFramePath = ""
+	}
+	if c.PostForm("delete_last_frame") == "true" {
+		newTake.LastFramePath = ""
+	}
+
 	// Handle optional file uploads (Overwrite copied paths)
 	firstFrame, _ := c.FormFile("first_frame")
 	if firstFrame != nil {
