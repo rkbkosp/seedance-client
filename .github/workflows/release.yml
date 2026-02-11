@@ -39,7 +39,7 @@ jobs:
           # Linux
           - os: ubuntu-latest
             platform: Linux-amd64
-            build_flags: ""
+            build_flags: "-tags webkit2_41"
             archive_name: Spark-linux-amd64.tar.gz
             app_path: build/bin/Spark
 
