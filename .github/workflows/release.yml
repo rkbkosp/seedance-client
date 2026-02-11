@@ -22,13 +22,6 @@ jobs:
             archive_name: Spark-macos-arm64.zip
             app_path: build/bin/Spark.app
 
-          # macOS (Intel)
-          - os: macos-13
-            platform: macOS-amd64
-            build_flags: ""
-            archive_name: Spark-macos-amd64.zip
-            app_path: build/bin/Spark.app
-
           # Windows
           - os: windows-latest
             platform: Windows-amd64
