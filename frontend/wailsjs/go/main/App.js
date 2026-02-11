@@ -34,6 +34,10 @@ export function GenerateTakeVideo(arg1) {
   return window['go']['main']['App']['GenerateTakeVideo'](arg1);
 }
 
+export function GetModelVersions() {
+  return window['go']['main']['App']['GetModelVersions']();
+}
+
 export function GetProject(arg1) {
   return window['go']['main']['App']['GetProject'](arg1);
 }

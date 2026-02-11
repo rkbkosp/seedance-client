@@ -4,7 +4,7 @@ import {main} from '../models';
 
 export function CopyToUploads(arg1:string):Promise<string>;
 
-export function CreateProject(arg1:string):Promise<void>;
+export function CreateProject(arg1:main.CreateProjectParams):Promise<void>;
 
 export function CreateStoryboard(arg1:main.CreateStoryboardParams):Promise<void>;
 
@@ -17,6 +17,8 @@ export function DeleteTake(arg1:number):Promise<main.DeleteTakeResult>;
 export function ExportProject(arg1:number):Promise<void>;
 
 export function GenerateTakeVideo(arg1:number):Promise<Record<string, any>>;
+
+export function GetModelVersions():Promise<Array<Record<string, string>>>;
 
 export function GetProject(arg1:number):Promise<main.ProjectDetailData>;
 

@@ -63,6 +63,20 @@ export namespace config {
 
 export namespace main {
 	
+	export class CreateProjectParams {
+	    name: string;
+	    model_version: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateProjectParams(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.model_version = source["model_version"];
+	    }
+	}
 	export class CreateStoryboardParams {
 	    project_id: number;
 	    prompt: string;
@@ -220,6 +234,7 @@ export namespace main {
 	export class ProjectDetail {
 	    id: number;
 	    name: string;
+	    model_version: string;
 	    // Go type: time
 	    created_at: any;
 	    storyboards: StoryboardData[];
@@ -232,6 +247,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.model_version = source["model_version"];
 	        this.created_at = this.convertValues(source["created_at"], null);
 	        this.storyboards = this.convertValues(source["storyboards"], StoryboardData);
 	    }
@@ -512,6 +528,7 @@ export namespace models {
 	export class Project {
 	    id: number;
 	    name: string;
+	    model_version: string;
 	    // Go type: time
 	    created_at: any;
 	    storyboards: Storyboard[];
@@ -524,6 +541,7 @@ export namespace models {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.model_version = source["model_version"];
 	        this.created_at = this.convertValues(source["created_at"], null);
 	        this.storyboards = this.convertValues(source["storyboards"], Storyboard);
 	    }
