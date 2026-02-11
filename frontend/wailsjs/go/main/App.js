@@ -14,6 +14,10 @@ export function CreateStoryboard(arg1) {
   return window['go']['main']['App']['CreateStoryboard'](arg1);
 }
 
+export function DecomposeStoryboardWithLLM(arg1) {
+  return window['go']['main']['App']['DecomposeStoryboardWithLLM'](arg1);
+}
+
 export function DeleteProject(arg1) {
   return window['go']['main']['App']['DeleteProject'](arg1);
 }
@@ -26,8 +30,20 @@ export function DeleteTake(arg1) {
   return window['go']['main']['App']['DeleteTake'](arg1);
 }
 
+export function DeleteV1Shot(arg1) {
+  return window['go']['main']['App']['DeleteV1Shot'](arg1);
+}
+
 export function ExportProject(arg1) {
   return window['go']['main']['App']['ExportProject'](arg1);
+}
+
+export function GenerateAssetImage(arg1) {
+  return window['go']['main']['App']['GenerateAssetImage'](arg1);
+}
+
+export function GenerateShotFrame(arg1) {
+  return window['go']['main']['App']['GenerateShotFrame'](arg1);
 }
 
 export function GenerateTakeVideo(arg1) {
@@ -58,6 +74,10 @@ export function GetTakeStatus(arg1) {
   return window['go']['main']['App']['GetTakeStatus'](arg1);
 }
 
+export function GetV1Workspace(arg1) {
+  return window['go']['main']['App']['GetV1Workspace'](arg1);
+}
+
 export function HasAPIKey() {
   return window['go']['main']['App']['HasAPIKey']();
 }
@@ -66,18 +86,54 @@ export function ListTakes(arg1) {
   return window['go']['main']['App']['ListTakes'](arg1);
 }
 
+export function MergeShotWithNext(arg1) {
+  return window['go']['main']['App']['MergeShotWithNext'](arg1);
+}
+
 export function SelectImageFile() {
   return window['go']['main']['App']['SelectImageFile']();
+}
+
+export function SelectStoryboardSourceFile() {
+  return window['go']['main']['App']['SelectStoryboardSourceFile']();
+}
+
+export function SplitShot(arg1) {
+  return window['go']['main']['App']['SplitShot'](arg1);
+}
+
+export function ToggleAssetVersionGood(arg1) {
+  return window['go']['main']['App']['ToggleAssetVersionGood'](arg1);
 }
 
 export function ToggleGoodTake(arg1) {
   return window['go']['main']['App']['ToggleGoodTake'](arg1);
 }
 
+export function ToggleShotFrameGood(arg1) {
+  return window['go']['main']['App']['ToggleShotFrameGood'](arg1);
+}
+
 export function UpdateAPIKey(arg1) {
   return window['go']['main']['App']['UpdateAPIKey'](arg1);
 }
 
+export function UpdateAssetCatalog(arg1) {
+  return window['go']['main']['App']['UpdateAssetCatalog'](arg1);
+}
+
+export function UpdateShotMetadata(arg1) {
+  return window['go']['main']['App']['UpdateShotMetadata'](arg1);
+}
+
 export function UpdateStoryboard(arg1) {
   return window['go']['main']['App']['UpdateStoryboard'](arg1);
+}
+
+export function UploadAssetImage(arg1) {
+  return window['go']['main']['App']['UploadAssetImage'](arg1);
+}
+
+export function UploadShotFrame(arg1) {
+  return window['go']['main']['App']['UploadShotFrame'](arg1);
 }

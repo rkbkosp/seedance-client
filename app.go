@@ -127,6 +127,7 @@ func (a *App) GetProjects() (*ProjectsData, error) {
 type CreateProjectParams struct {
 	Name         string `json:"name"`
 	ModelVersion string `json:"model_version"` // "v1.x" or "v2.0"
+	AspectRatio  string `json:"aspect_ratio"`  // fixed at project creation
 }
 
 // CreateProject creates a new project with a model version
@@ -137,12 +138,16 @@ func (a *App) CreateProject(params CreateProjectParams) error {
 	if params.ModelVersion == "" {
 		params.ModelVersion = models.ModelVersionV1
 	}
+	if params.AspectRatio == "" {
+		params.AspectRatio = "16:9"
+	}
 	if !models.IsValidModelVersion(params.ModelVersion) {
 		return fmt.Errorf("invalid model version: %s", params.ModelVersion)
 	}
 	return models.DB.Create(&models.Project{
 		Name:         params.Name,
 		ModelVersion: params.ModelVersion,
+		AspectRatio:  params.AspectRatio,
 	}).Error
 }
 
@@ -185,6 +190,8 @@ type TakeResponse struct {
 	TokenUsage         int       `json:"token_usage"`
 	ExpiresAfter       int64     `json:"expires_after"`
 	IsGood             bool      `json:"is_good"`
+	ChainFromPrev      bool      `json:"chain_from_prev"`
+	GenerationMode     string    `json:"generation_mode"`
 	CreatedAt          time.Time `json:"created_at"`
 }
 
@@ -210,6 +217,8 @@ func takeToResponse(take *models.Take) TakeResponse {
 		TokenUsage:         take.TokenUsage,
 		ExpiresAfter:       take.ExpiresAfter,
 		IsGood:             take.IsGood,
+		ChainFromPrev:      take.ChainFromPrev,
+		GenerationMode:     take.GenerationMode,
 		CreatedAt:          take.CreatedAt,
 	}
 }
@@ -228,6 +237,7 @@ type ProjectDetail struct {
 	ID           uint             `json:"id"`
 	Name         string           `json:"name"`
 	ModelVersion string           `json:"model_version"`
+	AspectRatio  string           `json:"aspect_ratio"`
 	CreatedAt    time.Time        `json:"created_at"`
 	Storyboards  []StoryboardData `json:"storyboards"`
 }
@@ -291,12 +301,17 @@ func (a *App) GetProject(id uint) (*ProjectDetailData, error) {
 	if modelVersion == "" {
 		modelVersion = models.ModelVersionV1
 	}
+	aspectRatio := project.AspectRatio
+	if aspectRatio == "" {
+		aspectRatio = "16:9"
+	}
 
 	return &ProjectDetailData{
 		Project: ProjectDetail{
 			ID:           project.ID,
 			Name:         project.Name,
 			ModelVersion: modelVersion,
+			AspectRatio:  aspectRatio,
 			CreatedAt:    project.CreatedAt,
 			Storyboards:  storyboards,
 		},
@@ -318,8 +333,11 @@ type CreateStoryboardParams struct {
 	Duration       int    `json:"duration"`
 	GenerateAudio  bool   `json:"generate_audio"`
 	ServiceTier    string `json:"service_tier"`
+	ExpiresAfter   int64  `json:"execution_expires_after"`
 	FirstFramePath string `json:"first_frame_path"`
 	LastFramePath  string `json:"last_frame_path"`
+	ChainFromPrev  bool   `json:"chain_from_prev"`
+	GenerationMode string `json:"generation_mode"`
 }
 
 // CreateStoryboard creates a new storyboard with initial take
@@ -329,6 +347,20 @@ func (a *App) CreateStoryboard(params CreateStoryboardParams) error {
 	if params.ServiceTier == "" {
 		params.ServiceTier = "standard"
 	}
+	if params.GenerationMode == "" {
+		params.GenerationMode = "standard"
+	}
+
+	projectRatio := params.Ratio
+	if projectRatio == "" {
+		var project models.Project
+		if err := models.DB.First(&project, params.ProjectID).Error; err == nil && project.AspectRatio != "" {
+			projectRatio = project.AspectRatio
+		}
+	}
+	if projectRatio == "" {
+		projectRatio = "16:9"
+	}
 
 	storyboard := models.Storyboard{
 		ProjectID: params.ProjectID,
@@ -337,19 +369,27 @@ func (a *App) CreateStoryboard(params CreateStoryboardParams) error {
 	models.DB.Create(&storyboard)
 
 	take := models.Take{
-		StoryboardID:  storyboard.ID,
-		Prompt:        params.Prompt,
-		ModelID:       params.ModelID,
-		Ratio:         params.Ratio,
-		Duration:      params.Duration,
-		GenerateAudio: params.GenerateAudio,
-		ServiceTier:   params.ServiceTier,
-		Status:        "Draft",
-		CreatedAt:     time.Now(),
+		StoryboardID:   storyboard.ID,
+		Prompt:         params.Prompt,
+		ModelID:        params.ModelID,
+		Ratio:          projectRatio,
+		Duration:       params.Duration,
+		GenerateAudio:  params.GenerateAudio,
+		ServiceTier:    params.ServiceTier,
+		ChainFromPrev:  params.ChainFromPrev,
+		GenerationMode: params.GenerationMode,
+		Status:         "Draft",
+		CreatedAt:      time.Now(),
 	}
 
 	if params.ServiceTier == "flex" {
-		take.ExpiresAfter = 86400
+		if params.ExpiresAfter > 0 {
+			take.ExpiresAfter = params.ExpiresAfter
+		} else {
+			take.ExpiresAfter = 86400
+		}
+	} else {
+		take.ExpiresAfter = 0
 	}
 
 	// Use file paths directly (files already saved via SelectImageFile)
@@ -382,10 +422,13 @@ type UpdateStoryboardParams struct {
 	Duration         int    `json:"duration"`
 	GenerateAudio    bool   `json:"generate_audio"`
 	ServiceTier      string `json:"service_tier"`
+	ExpiresAfter     int64  `json:"execution_expires_after"`
 	FirstFramePath   string `json:"first_frame_path"`
 	LastFramePath    string `json:"last_frame_path"`
 	DeleteFirstFrame bool   `json:"delete_first_frame"`
 	DeleteLastFrame  bool   `json:"delete_last_frame"`
+	ChainFromPrev    bool   `json:"chain_from_prev"`
+	GenerationMode   string `json:"generation_mode"`
 }
 
 // UpdateStoryboard creates a new take version for the storyboard
@@ -414,6 +457,8 @@ func (a *App) UpdateStoryboard(params UpdateStoryboardParams) error {
 		ExpiresAfter:   prevTake.ExpiresAfter,
 		FirstFramePath: prevTake.FirstFramePath,
 		LastFramePath:  prevTake.LastFramePath,
+		ChainFromPrev:  prevTake.ChainFromPrev,
+		GenerationMode: prevTake.GenerationMode,
 		Status:         "Draft",
 		CreatedAt:      time.Now(),
 	}
@@ -431,10 +476,18 @@ func (a *App) UpdateStoryboard(params UpdateStoryboardParams) error {
 		newTake.Duration = params.Duration
 	}
 	newTake.GenerateAudio = params.GenerateAudio
+	newTake.ChainFromPrev = params.ChainFromPrev
+	if params.GenerationMode != "" {
+		newTake.GenerationMode = params.GenerationMode
+	}
 	if params.ServiceTier != "" {
 		newTake.ServiceTier = params.ServiceTier
 		if params.ServiceTier == "flex" {
-			newTake.ExpiresAfter = 86400
+			if params.ExpiresAfter > 0 {
+				newTake.ExpiresAfter = params.ExpiresAfter
+			} else if newTake.ExpiresAfter <= 0 {
+				newTake.ExpiresAfter = 86400
+			}
 		} else {
 			newTake.ExpiresAfter = 0
 		}
@@ -446,6 +499,10 @@ func (a *App) UpdateStoryboard(params UpdateStoryboardParams) error {
 	}
 	if params.DeleteLastFrame {
 		newTake.LastFramePath = ""
+	}
+	// In chain mode, empty first frame means "resolve from previous shot tail at generation time".
+	if params.ChainFromPrev && params.FirstFramePath == "" {
+		newTake.FirstFramePath = ""
 	}
 
 	// Handle new file paths (override copied paths)
@@ -470,6 +527,30 @@ func (a *App) GenerateTakeVideo(id uint) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("take not found")
 	}
 
+	// Resolve storyboard metadata for prompt composition and frame fallback.
+	var storyboard models.Storyboard
+	_ = models.DB.First(&storyboard, take.StoryboardID).Error
+
+	// Auto-resolve first frame from previous shot's tail if chain mode is enabled.
+	if take.ChainFromPrev && take.FirstFramePath == "" {
+		if chained := getChainedFirstFramePath(take.StoryboardID); chained != "" {
+			take.FirstFramePath = chained
+		}
+	}
+	// Auto-pick active shot frame versions when explicit frame paths are empty.
+	if take.FirstFramePath == "" {
+		if p := getActiveShotFramePath(take.StoryboardID, "start"); p != "" {
+			take.FirstFramePath = p
+		}
+	}
+	if take.LastFramePath == "" {
+		if p := getActiveShotFramePath(take.StoryboardID, "end"); p != "" {
+			take.LastFramePath = p
+		}
+	}
+	// Persist frame fallbacks on this take so users can inspect and reuse them.
+	models.DB.Save(&take)
+
 	var firstFrameURL, lastFrameURL string
 	if take.FirstFramePath != "" {
 		b64, err := imageToBase64(take.FirstFramePath)
@@ -486,8 +567,13 @@ func (a *App) GenerateTakeVideo(id uint) (map[string]interface{}, error) {
 		lastFrameURL = b64
 	}
 
+	finalPrompt := take.Prompt
+	if storyboard.ID > 0 {
+		finalPrompt = composeTakePromptWithAssetRefs(storyboard, take.Prompt)
+	}
+
 	taskID, err := a.volcService.CreateVideoTask(
-		take.ModelID, take.Prompt, firstFrameURL, lastFrameURL,
+		take.ModelID, finalPrompt, firstFrameURL, lastFrameURL,
 		take.Ratio, take.Duration, take.GenerateAudio,
 		take.ServiceTier, take.ExpiresAfter,
 	)

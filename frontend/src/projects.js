@@ -23,6 +23,7 @@ function renderHTML(container, data) {
         const versionBadge = p.model_version === 'v2.0'
             ? '<span class="badge badge-primary badge-xs">2.0</span>'
             : '<span class="badge badge-ghost badge-xs">1.x</span>';
+        const ratioBadge = `<span class="badge badge-ghost badge-xs">${escapeHtml(p.aspect_ratio || '16:9')}</span>`;
 
         return `
         <div class="card card-compact bg-base-100 border border-base-content/10">
@@ -31,6 +32,7 @@ function renderHTML(container, data) {
                     <div class="flex items-center gap-2 min-w-0">
                         <h2 class="card-title text-base truncate">${escapeHtml(p.name)}</h2>
                         ${versionBadge}
+                        ${ratioBadge}
                     </div>
                     <button data-delete-project="${p.id}" class="btn btn-ghost btn-circle btn-xs text-error flex-shrink-0">
                         <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
@@ -60,6 +62,12 @@ function renderHTML(container, data) {
                 <select id="new-project-version" class="select select-bordered select-sm join-item">
                     <option value="v2.0">Seedance 2.0</option>
                     <option value="v1.x">Seedance 1.5 &amp; earlier</option>
+                </select>
+                <select id="new-project-ratio" class="select select-bordered select-sm join-item">
+                    <option value="16:9" selected>16:9</option>
+                    <option value="9:16">9:16</option>
+                    <option value="1:1">1:1</option>
+                    <option value="21:9">21:9</option>
                 </select>
                 <button id="create-project-btn" class="btn btn-primary btn-sm join-item gap-1">
                     <span class="text-lg font-bold">+</span> <span data-i18n="projects.create.btn">Create</span>
@@ -110,8 +118,9 @@ function attachEvents(container) {
         const name = nameInput.value.trim();
         if (!name) return;
         const version = document.getElementById('new-project-version').value;
+        const aspectRatio = document.getElementById('new-project-ratio').value;
         try {
-            await window.go.main.App.CreateProject({ name, model_version: version });
+            await window.go.main.App.CreateProject({ name, model_version: version, aspect_ratio: aspectRatio });
             nameInput.value = '';
             await renderProjectsPage(container);
         } catch (err) {

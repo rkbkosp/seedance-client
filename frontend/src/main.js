@@ -48,15 +48,15 @@ async function navigate() {
 function renderShell() {
     document.getElementById('app').innerHTML = `
         <!-- Top Navbar -->
-        <div class="navbar bg-base-100 border-b border-base-content/10 mb-4 sticky top-0 z-50">
+        <div class="navbar app-shell-top mb-4 sticky top-0 z-50">
             <div class="navbar-start">
-                <a href="#/" class="btn btn-ghost btn-sm text-lg gap-2">
+                <a href="#/" class="btn btn-ghost btn-sm text-lg gap-2 app-shell-brand">
                     <span class="material-symbols-outlined text-xl">movie_creation</span>
                     <span data-i18n="app.title">Seedance Manager</span>
                 </a>
             </div>
             <div class="navbar-end">
-                <button id="open-settings-btn" class="btn btn-ghost btn-sm gap-1">
+                <button id="open-settings-btn" class="btn btn-ghost btn-sm gap-1 app-shell-settings-btn">
                     <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" width="20" fill="currentColor">
                         <path d="m370-80-16-128q-13-5-24.5-12T307-235l-119 50L78-375l103-78q-1-7-1-13.5v-27q0-6.5 1-13.5L78-585l110-190 119 50q11-8 23-15t24-12l16-128h220l16 128q13 5 24.5 12t22.5 15l119-50 110 190-103 78q1 7 1 13.5v27q0 6.5-1 13.5l103 78-110 190-119-50q-11 8-23 15t-24 12l-16 128H370Zm112-260q58 0 99-41t41-99q0-58-41-99t-99-41q-59 0-99.5 41T342-480q0 58 40.5 99t99.5 41Zm0-80q-25 0-42.5-17.5T422-480q0-25 17.5-42.5T482-540q25 0 42.5 17.5T542-480q0 25-17.5 42.5T482-420Z" />
                     </svg>
@@ -99,10 +99,10 @@ function renderShell() {
         </dialog>
 
         <!-- Page Content -->
-        <div class="container mx-auto px-4 max-w-6xl" id="page-content"></div>
+        <div class="container mx-auto px-4 max-w-screen-2xl" id="page-content"></div>
 
         <!-- Footer -->
-        <footer class="footer footer-center p-6 bg-base-100 border-t border-base-content/10 text-base-content/60 mt-8 text-sm">
+        <footer class="footer footer-center p-6 app-shell-footer mt-8 text-sm">
             <p data-i18n="footer.text">&copy; 2026 Seedance Client</p>
         </footer>
     `;

@@ -8,13 +8,21 @@ export function CreateProject(arg1:main.CreateProjectParams):Promise<void>;
 
 export function CreateStoryboard(arg1:main.CreateStoryboardParams):Promise<void>;
 
+export function DecomposeStoryboardWithLLM(arg1:main.DecomposeStoryboardParams):Promise<main.V1WorkspaceData>;
+
 export function DeleteProject(arg1:number):Promise<void>;
 
 export function DeleteStoryboard(arg1:number):Promise<number>;
 
 export function DeleteTake(arg1:number):Promise<main.DeleteTakeResult>;
 
+export function DeleteV1Shot(arg1:number):Promise<void>;
+
 export function ExportProject(arg1:number):Promise<void>;
+
+export function GenerateAssetImage(arg1:main.GenerateAssetImageParams):Promise<main.AssetVersionResponse>;
+
+export function GenerateShotFrame(arg1:main.GenerateShotFrameParams):Promise<main.ShotFrameVersionResponse>;
 
 export function GenerateTakeVideo(arg1:number):Promise<Record<string, any>>;
 
@@ -30,14 +38,34 @@ export function GetTake(arg1:number):Promise<main.TakeResponse>;
 
 export function GetTakeStatus(arg1:number):Promise<main.TakeStatusResult>;
 
+export function GetV1Workspace(arg1:number):Promise<main.V1WorkspaceData>;
+
 export function HasAPIKey():Promise<boolean>;
 
 export function ListTakes(arg1:number):Promise<Array<main.TakeResponse>>;
 
+export function MergeShotWithNext(arg1:number):Promise<void>;
+
 export function SelectImageFile():Promise<string>;
+
+export function SelectStoryboardSourceFile():Promise<main.StoryboardSourceFile>;
+
+export function SplitShot(arg1:main.SplitShotParams):Promise<number>;
+
+export function ToggleAssetVersionGood(arg1:number):Promise<boolean>;
 
 export function ToggleGoodTake(arg1:number):Promise<boolean>;
 
+export function ToggleShotFrameGood(arg1:number):Promise<boolean>;
+
 export function UpdateAPIKey(arg1:string):Promise<void>;
 
+export function UpdateAssetCatalog(arg1:main.UpdateAssetCatalogParams):Promise<void>;
+
+export function UpdateShotMetadata(arg1:main.UpdateShotParams):Promise<void>;
+
 export function UpdateStoryboard(arg1:main.UpdateStoryboardParams):Promise<void>;
+
+export function UploadAssetImage(arg1:number):Promise<main.AssetVersionResponse>;
+
+export function UploadShotFrame(arg1:main.UploadShotFrameParams):Promise<main.ShotFrameVersionResponse>;

@@ -81,6 +81,7 @@ func (s *VolcEngineService) CreateVideoTask(modelID string, prompt string, first
 
 	// Handle Service Tier
 	// Only set ServiceTier when explicitly "flex", otherwise let API use default behavior
+	// and do not send service_tier/execution_expires_after at all.
 	if serviceTier == "flex" {
 		req.ServiceTier = volcengine.String("flex")
 		// Use provided expiresAfter or default to 86400 (24h)

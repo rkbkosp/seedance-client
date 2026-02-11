@@ -1,1062 +1,1177 @@
-import { applyLanguage, getLanguage, i18nData } from './i18n.js';
+import { applyLanguage } from './i18n.js';
 
-// ============================================================
-// State
-// ============================================================
+const PANELS = {
+    breakdown: 'breakdown',
+    assets: 'assets',
+    workbench: 'workbench'
+};
 
-let activeTasks = new Set();
-let isPolling = false;
-let pageData = null; // Holds models, audioSupportedModels
-let currentProjectId = null;
-let newFirstFramePath = '';
-let newLastFramePath = '';
+const SCROLL_PRESERVE_SELECTORS = ['.shot-scroll', '.asset-body', '.wb-scroll'];
 
-// ============================================================
-// Storyboard Page
-// ============================================================
+let state = {
+    projectId: null,
+    workspace: null,
+    activePanel: PANELS.breakdown,
+    assetTab: 'character',
+    selectedShotId: null,
+    selectedTakeByShot: {},
+    scrollTopBySelector: {},
+    decomposeText: '',
+    llmModel: '',
+    llmProvider: 'ark_default',
+    llmBaseURL: 'https://ark.cn-beijing.volces.com/api/v3',
+    llmApiKey: '',
+    replaceExisting: true,
+};
+
+let rootContainer = null;
+let pollTimer = null;
+let isLoadingWorkspace = false;
 
 export async function renderStoryboardPage(container, projectId) {
-    currentProjectId = projectId;
-    activeTasks = new Set();
-    isPolling = false;
-    newFirstFramePath = '';
-    newLastFramePath = '';
+    rootContainer = container;
+    state = {
+        projectId,
+        workspace: null,
+        activePanel: PANELS.breakdown,
+        assetTab: 'character',
+        selectedShotId: null,
+        selectedTakeByShot: {},
+        scrollTopBySelector: {},
+        decomposeText: '',
+        llmModel: '',
+        llmProvider: 'ark_default',
+        llmBaseURL: 'https://ark.cn-beijing.volces.com/api/v3',
+        llmApiKey: '',
+        replaceExisting: true,
+    };
 
+    await loadWorkspace({ preserveSelection: false });
+    renderPage();
+}
+
+async function loadWorkspace({ preserveSelection = true } = {}) {
+    if (isLoadingWorkspace) return;
+    isLoadingWorkspace = true;
     try {
-        const data = await window.go.main.App.GetProject(projectId);
-        pageData = data;
-        renderHTML(container, data);
-        attachEvents(container, data);
-        applyLanguage();
+        const prevShotId = preserveSelection ? state.selectedShotId : null;
+        const prevTakeByShot = preserveSelection ? { ...state.selectedTakeByShot } : {};
 
-        // Start polling for running tasks
-        if (activeTasks.size > 0) {
-            startAdaptivePolling();
-            isPolling = true;
-        }
-    } catch (err) {
-        container.innerHTML = `<div class="alert alert-error mt-4">Failed to load project: ${escapeHtml(String(err))}</div>`;
-    }
-}
+        const ws = await window.go.main.App.GetV1Workspace(state.projectId);
+        state.workspace = ws;
+        state.llmModel = state.llmModel || ws.llm_model_default || '';
 
-// ============================================================
-// HTML Rendering
-// ============================================================
-
-function renderHTML(container, data) {
-    const project = data.project;
-    const models = data.models || [];
-    const audioSupportedModels = data.audio_supported_models || [];
-
-    container.innerHTML = `
-        <!-- Back Button -->
-        <div class="mb-4">
-            <a href="#/" class="btn btn-ghost btn-sm gap-1 text-primary">
-                <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
-                    <path d="m313-440 224 224-57 56-320-320 320-320 57 56-224 224h487v80H313Z" />
-                </svg>
-                <span data-i18n="sb.back">Back to Projects</span>
-            </a>
-        </div>
-
-        <!-- Project Header -->
-        <div class="mb-6 p-4 bg-base-300 rounded-md">
-            <div class="flex justify-between items-start">
-                <div>
-                    <h1 class="text-2xl font-bold text-base-content mb-1">${escapeHtml(project.name)}</h1>
-                    <p class="text-xs text-base-content/50">Campaign ID: ${project.id}</p>
-                </div>
-                <button id="export-project-btn" class="btn btn-primary btn-sm gap-1" title="Export all succeeded videos as ZIP with FCPXML">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
-                        <path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
-                    </svg>
-                    <span data-i18n="sb.export">Export Bundle</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- Storyboard List -->
-        <div class="space-y-8" id="storyboard-list">
-            ${(project.storyboards || []).map(sb => renderStoryboard(sb)).join('')}
-        </div>
-
-        <!-- Add New Storyboard Form -->
-        ${renderNewStoryboardForm(models, audioSupportedModels)}
-
-        <!-- Edit Storyboard Modal -->
-        ${renderEditDialog(models, audioSupportedModels)}
-    `;
-}
-
-function renderStoryboard(sb) {
-    const takes = sb.takes || [];
-    const activeTake = sb.active_take;
-    if (!activeTake) return '';
-
-    // Determine active version number
-    let activeVersion = takes.length;
-    for (let i = 0; i < takes.length; i++) {
-        if (takes[i].id === activeTake.id) {
-            activeVersion = i + 1;
-            break;
-        }
-    }
-
-    // Track running tasks
-    if (activeTake.status === 'Running' || activeTake.status === 'Queued') {
-        activeTasks.add(activeTake.id);
-    }
-
-    return `
-    <div class="card card-compact bg-base-100 border border-base-content/10" id="sb-container-${sb.id}">
-        <!-- Takes Tab Bar -->
-        <div class="tabs tabs-boxed bg-base-200 p-1 gap-1 overflow-x-auto rounded-t-md">
-            <span class="text-xs font-bold text-base-content/60 uppercase tracking-wider mr-2 self-center px-2">Versions:</span>
-            ${takes.map((take, idx) => {
-                const version = idx + 1;
-                const isActive = take.id === activeTake.id;
-                return `<button data-switch-take="${take.id}" data-sb-id="${sb.id}" data-version="${version}"
-                    class="take-tab-${sb.id} tab tab-sm ${isActive ? 'tab-active' : ''}">
-                    v${version}${take.is_good ? '<span class="ml-1" title="Marked as Good Take">🩷</span>' : ''}
-                </button>`;
-            }).join('')}
-        </div>
-
-        <!-- Active Take Content -->
-        <div id="take-content-${sb.id}" class="take-content" data-take-id="${activeTake.id}" data-current-version="${activeVersion}">
-            ${renderTakeContent(sb.id, activeTake, activeVersion)}
-        </div>
-    </div>`;
-}
-
-function renderTakeContent(sbId, take, version) {
-    const statusClass = getStatusBadgeClass(take.status);
-
-    return `
-        <!-- Header -->
-        <div class="px-4 py-3 border-b border-base-content/10 flex justify-between items-center bg-base-100">
-            <div class="flex items-center gap-3">
-                <span class="text-sm font-semibold"><span data-i18n="sb.scene">Version</span> ${version}</span>
-                <span id="sb-status-${take.id}" class="badge badge-sm ${statusClass}">${take.status}</span>
-                <button data-toggle-good="${take.id}" class="btn btn-circle btn-ghost btn-xs ${take.is_good ? 'text-pink-500' : 'text-base-content/30'}" title="Mark as Good Take">
-                    <span class="material-symbols-outlined text-sm">favorite</span>
-                </button>
-            </div>
-            <div class="flex items-center gap-1">
-                <button data-edit-sb="${sbId}" data-take='${JSON.stringify({
-                    prompt: take.prompt, model_id: take.model_id, ratio: take.ratio,
-                    duration: take.duration, generate_audio: take.generate_audio,
-                    service_tier: take.service_tier, first_frame_path: take.first_frame_path || '',
-                    last_frame_path: take.last_frame_path || ''
-                }).replace(/'/g, '&#39;')}'
-                    class="btn btn-ghost btn-circle btn-xs text-primary" title="Edit & Save as New Take">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
-                        <path d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z" />
-                    </svg>
-                </button>
-                <button data-delete-take="${take.id}" class="btn btn-ghost btn-circle btn-xs text-error" title="Delete Take">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
-                        <path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z" />
-                    </svg>
-                </button>
-                <button data-delete-storyboard="${sbId}" class="btn btn-ghost btn-circle btn-xs text-base-content/30 hover:text-error" title="Delete Entire Storyboard">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
-                        <path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z" />
-                    </svg>
-                </button>
-            </div>
-        </div>
-
-        <div class="flex flex-col md:flex-row">
-            <!-- Left: Inputs & Config -->
-            <div class="md:w-1/2 p-4 space-y-4">
-                <div>
-                    <h3 class="text-xs font-bold text-primary mb-1 uppercase tracking-wider" data-i18n="sb.prompt">Prompt</h3>
-                    <p class="text-sm text-base-content leading-relaxed take-prompt">${escapeHtml(take.prompt)}</p>
-                </div>
-                <div class="grid grid-cols-2 gap-3 take-frame-grid">
-                    ${take.first_frame_path ? `
-                    <div class="relative group">
-                        <label class="block text-xs font-bold text-base-content/60 mb-1 uppercase" data-i18n="sb.first_frame">First Frame</label>
-                        <div class="rounded-md overflow-hidden border border-base-content/10">
-                            <img src="/${take.first_frame_path}" class="w-full h-24 object-cover">
-                        </div>
-                    </div>` : ''}
-                    ${take.last_frame_path ? `
-                    <div class="relative group">
-                        <label class="block text-xs font-bold text-base-content/60 mb-1 uppercase" data-i18n="sb.last_frame">Last Frame</label>
-                        <div class="rounded-md overflow-hidden border border-base-content/10">
-                            <img src="/${take.last_frame_path}" class="w-full h-24 object-cover">
-                        </div>
-                    </div>` : ''}
-                </div>
-                <div class="flex flex-wrap gap-1 mt-2">
-                    <span class="badge badge-secondary badge-sm">${take.model_id}</span>
-                    <span class="badge badge-secondary badge-sm">${take.service_tier === 'flex' ? 'Flex' : 'Standard'}</span>
-                    <span class="badge badge-secondary badge-sm">${take.ratio}</span>
-                    <span class="badge badge-secondary badge-sm">${take.duration}s</span>
-                </div>
-            </div>
-
-            <!-- Right: Media Output -->
-            <div id="sb-right-col-${take.id}" class="md:w-1/2 bg-neutral flex items-center justify-center relative min-h-[280px]">
-                ${renderRightColumn(take)}
-            </div>
-        </div>`;
-}
-
-function renderRightColumn(take) {
-    if (take.status === 'Succeeded') {
-        const videoUrl = take.video_url || '';
-        const lastFrameUrl = take.last_frame_url || '';
-        return `
-            <video controls class="w-full h-full max-h-[400px] object-contain" loop>
-                <source src="${videoUrl}" type="video/mp4">
-            </video>
-            <div class="absolute bottom-3 right-3 flex gap-1">
-                ${lastFrameUrl ? `
-                <button data-use-first-frame="${lastFrameUrl}" class="btn btn-accent btn-circle btn-sm" title="Use last frame as first frame">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
-                        <path d="M440-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h160v80H280q-50 0-85 35t-35 85q0 50 35 85t85 35h160v80ZM320-440v-80h320v80H320Zm200 160v-80h160q50 0 85-35t35-85q0-50-35-85t-85-35H520v-80h160q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H520Z" />
-                    </svg>
-                </button>
-                <a href="${lastFrameUrl}" download class="btn btn-secondary btn-circle btn-sm" title="Download last frame">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
-                        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z" />
-                    </svg>
-                </a>` : ''}
-                <a href="${videoUrl}" download class="btn btn-primary btn-circle btn-sm" title="Download video">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
-                        <path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
-                    </svg>
-                </a>
-            </div>`;
-    } else if (take.status === 'Running' || take.status === 'Queued') {
-        return `
-            <div class="text-base-content flex flex-col items-center">
-                <span class="loading loading-spinner loading-md text-primary mb-3"></span>
-                <p class="text-sm font-medium" data-i18n="sb.generating">GENERATING...</p>
-            </div>`;
-    } else if (take.status === 'Draft') {
-        return `
-            <button data-generate="${take.id}" class="btn btn-primary btn-sm gap-1 generate-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
-                    <path d="M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z" />
-                </svg>
-                <span data-i18n="sb.start_gen">Generate Video</span>
-            </button>`;
-    } else {
-        // Failed or other status
-        return `
-            <div class="text-error flex flex-col items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" height="32" viewBox="0 -960 960 960" width="32" fill="currentColor">
-                    <path d="M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z" />
-                </svg>
-                <p class="mt-1 text-sm font-bold" data-i18n="sb.failed">Failed</p>
-                <button data-generate="${take.id}" class="btn btn-error btn-sm gap-1 mt-2 generate-btn">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="14" viewBox="0 -960 960 960" width="14" fill="currentColor">
-                        <path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z" />
-                    </svg>
-                    <span data-i18n="sb.retry">Retry</span>
-                </button>
-            </div>`;
-    }
-}
-
-function renderNewStoryboardForm(models, audioSupportedModels) {
-    const modelOptions = models.map(m =>
-        `<option value="${m.id}" ${m.default ? 'selected' : ''}>${escapeHtml(m.name)}</option>`
-    ).join('');
-
-    return `
-    <div class="mt-10 card card-compact bg-base-100 border border-base-content/10">
-        <div class="card-body">
-            <div class="flex items-center gap-2 mb-4">
-                <div class="w-8 h-8 rounded-md bg-primary flex items-center justify-center text-primary-content">
-                    <span class="material-symbols-outlined text-lg">add</span>
-                </div>
-                <h3 class="card-title text-lg" data-i18n="sb.new">New Storyboard</h3>
-            </div>
-
-            <div id="new-sb-form" class="space-y-4">
-                <div class="form-control">
-                    <label class="label py-1">
-                        <span class="label-text text-sm font-medium" data-i18n="sb.prompt">Prompt</span>
-                    </label>
-                    <textarea id="new-prompt" rows="2" required class="textarea textarea-bordered textarea-sm w-full"
-                        data-i18n="sb.desc_placeholder" placeholder="Describe your scene in detail..."></textarea>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text text-sm" data-i18n="sb.first_frame">First Frame</span></label>
-                        <div id="drop-first-frame" class="drag-drop-zone relative border border-dashed border-base-content/20 rounded-md p-4 text-center hover:bg-base-200 transition cursor-pointer" data-pick-image="first">
-                            <div class="upload-placeholder text-primary text-sm">
-                                <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24" fill="currentColor" class="mx-auto mb-1">
-                                    <path d="M440-320v-326L336-542l-56-58 200-200 200 200-56 58-104-104v326h-80ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
-                                </svg>
-                                <span class="font-medium" data-i18n="sb.upload_img">Select Image</span>
-                            </div>
-                            <div class="preview-container hidden relative">
-                                <img class="preview-img w-full h-24 object-cover rounded-md">
-                                <button type="button" class="clear-btn btn btn-error btn-circle btn-xs absolute top-1 right-1 z-10" data-clear-image="first">✕</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text text-sm" data-i18n="sb.last_frame">Last Frame</span></label>
-                        <div id="drop-last-frame" class="drag-drop-zone relative border border-dashed border-base-content/20 rounded-md p-4 text-center hover:bg-base-200 transition cursor-pointer" data-pick-image="last">
-                            <div class="upload-placeholder text-primary text-sm">
-                                <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24" fill="currentColor" class="mx-auto mb-1">
-                                    <path d="M440-320v-326L336-542l-56-58 200-200 200 200-56 58-104-104v326h-80ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
-                                </svg>
-                                <span class="font-medium" data-i18n="sb.upload_img">Select Image</span>
-                            </div>
-                            <div class="preview-container hidden relative">
-                                <img class="preview-img w-full h-24 object-cover rounded-md">
-                                <button type="button" class="clear-btn btn btn-error btn-circle btn-xs absolute top-1 right-1 z-10" data-clear-image="last">✕</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text text-xs" data-i18n="sb.model">Model</span></label>
-                        <select id="new-model" class="select select-bordered select-sm w-full">${modelOptions}</select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text text-xs" data-i18n="sb.ratio">Ratio</span></label>
-                        <select id="new-ratio" class="select select-bordered select-sm w-full">
-                            <option value="adaptive">Adaptive</option>
-                            <option value="16:9">16:9</option>
-                            <option value="9:16">9:16</option>
-                        </select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text text-xs" data-i18n="sb.duration">Duration</span></label>
-                        <select id="new-duration" class="select select-bordered select-sm w-full">
-                            <option value="5" selected>5s</option>
-                            <option value="10">10s</option>
-                        </select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text text-xs" data-i18n="sb.mode">Mode</span></label>
-                        <select id="new-service-tier" class="select select-bordered select-sm w-full">
-                            <option value="standard" selected>Standard</option>
-                            <option value="flex">Flex</option>
-                        </select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text text-xs" data-i18n="sb.audio">Audio</span></label>
-                        <label class="label cursor-pointer justify-start gap-2 bg-base-200 rounded-md px-2 h-8">
-                            <input type="checkbox" id="new-generate-audio" value="true" class="toggle toggle-primary toggle-sm">
-                            <span class="label-text text-xs">Audio</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="pt-2 flex justify-end">
-                    <button id="add-storyboard-btn" class="btn btn-primary btn-sm" data-i18n="sb.add_btn">Add Storyboard</button>
-                </div>
-            </div>
-        </div>
-    </div>`;
-}
-
-function renderEditDialog(models, audioSupportedModels) {
-    const modelOptions = models.map(m =>
-        `<option value="${m.id}">${escapeHtml(m.name)}</option>`
-    ).join('');
-
-    return `
-    <dialog id="edit-dialog" class="modal">
-        <div class="modal-box max-w-md">
-            <h3 class="text-lg font-bold mb-3" data-i18n="sb.edit_title">Edit Storyboard</h3>
-            <div id="edit-form" class="space-y-3">
-                <div class="form-control">
-                    <label class="label py-1"><span class="label-text text-sm font-medium" data-i18n="sb.prompt">Prompt</span></label>
-                    <textarea id="edit-prompt" rows="2" required class="textarea textarea-bordered textarea-sm w-full"></textarea>
-                </div>
-                <div class="grid grid-cols-3 gap-2">
-                    <div class="form-control">
-                        <label class="label py-0.5"><span class="label-text text-xs" data-i18n="sb.model">Model</span></label>
-                        <select id="edit-model" class="select select-bordered select-sm w-full">${modelOptions}</select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label py-0.5"><span class="label-text text-xs" data-i18n="sb.ratio">Ratio</span></label>
-                        <select id="edit-ratio" class="select select-bordered select-sm w-full">
-                            <option value="adaptive">Adaptive</option>
-                            <option value="16:9">16:9</option>
-                            <option value="9:16">9:16</option>
-                        </select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label py-0.5"><span class="label-text text-xs" data-i18n="sb.duration">Duration</span></label>
-                        <select id="edit-duration" class="select select-bordered select-sm w-full">
-                            <option value="5">5s</option>
-                            <option value="10">10s</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                    <div class="form-control">
-                        <label class="label py-0.5"><span class="label-text text-xs" data-i18n="sb.mode">Mode</span></label>
-                        <select id="edit-service-tier" class="select select-bordered select-sm w-full">
-                            <option value="standard">Standard</option>
-                            <option value="flex">Flex</option>
-                        </select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label py-0.5"><span class="label-text text-xs" data-i18n="sb.audio">Audio</span></label>
-                        <label class="label cursor-pointer justify-start gap-2 bg-base-200 rounded-md px-2 h-8">
-                            <input type="checkbox" id="edit-generate-audio" value="true" class="toggle toggle-primary toggle-sm">
-                            <span class="label-text text-xs">Audio</span>
-                        </label>
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                    <div class="form-control">
-                        <label class="label py-0.5"><span class="label-text text-xs" data-i18n="sb.first_frame">First Frame</span></label>
-                        <button type="button" id="edit-first-frame-btn" class="btn btn-outline btn-sm w-full gap-1">
-                            <svg xmlns="http://www.w3.org/2000/svg" height="14" viewBox="0 -960 960 960" width="14" fill="currentColor"><path d="M440-320v-326L336-542l-56-58 200-200 200 200-56 58-104-104v326h-80ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>
-                            <span data-i18n="sb.upload_img">Select Image</span>
-                        </button>
-                        <span id="edit-first-frame-name" class="text-xs text-success mt-1 truncate hidden"></span>
-                        <label class="label cursor-pointer justify-start gap-2 mt-1 hidden" id="first-frame-delete-wrapper">
-                            <input type="checkbox" id="edit-delete-first-frame" class="checkbox checkbox-xs checkbox-error">
-                            <span class="label-text text-xs text-error">Remove frame</span>
-                        </label>
-                    </div>
-                    <div class="form-control">
-                        <label class="label py-0.5"><span class="label-text text-xs" data-i18n="sb.last_frame">Last Frame</span></label>
-                        <button type="button" id="edit-last-frame-btn" class="btn btn-outline btn-sm w-full gap-1">
-                            <svg xmlns="http://www.w3.org/2000/svg" height="14" viewBox="0 -960 960 960" width="14" fill="currentColor"><path d="M440-320v-326L336-542l-56-58 200-200 200 200-56 58-104-104v326h-80ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>
-                            <span data-i18n="sb.upload_img">Select Image</span>
-                        </button>
-                        <span id="edit-last-frame-name" class="text-xs text-success mt-1 truncate hidden"></span>
-                        <label class="label cursor-pointer justify-start gap-2 mt-1 hidden" id="last-frame-delete-wrapper">
-                            <input type="checkbox" id="edit-delete-last-frame" class="checkbox checkbox-xs checkbox-error">
-                            <span class="label-text text-xs text-error">Remove frame</span>
-                        </label>
-                    </div>
-                </div>
-                <div class="modal-action">
-                    <button id="edit-cancel-btn" class="btn btn-ghost btn-sm" data-i18n="btn.cancel">Cancel</button>
-                    <button id="edit-submit-btn" class="btn btn-primary btn-sm" data-i18n="sb.update_btn">Update</button>
-                </div>
-            </div>
-        </div>
-        <form method="dialog" class="modal-backdrop"><button>close</button></form>
-    </dialog>`;
-}
-
-// ============================================================
-// Event Handlers
-// ============================================================
-
-function attachEvents(container, data) {
-    const audioSupportedModels = data.audio_supported_models || [];
-
-    // Export button
-    document.getElementById('export-project-btn')?.addEventListener('click', async () => {
-        try {
-            await window.go.main.App.ExportProject(currentProjectId);
-        } catch (err) {
-            if (err) alert('Export failed: ' + err);
-        }
-    });
-
-    // Tab switching
-    container.querySelectorAll('[data-switch-take]').forEach(btn => {
-        btn.addEventListener('click', () => switchTake(
-            parseInt(btn.dataset.switchTake),
-            parseInt(btn.dataset.sbId),
-            parseInt(btn.dataset.version)
-        ));
-    });
-
-    // Generate video buttons
-    attachGenerateEvents(container);
-
-    // Good take toggle
-    container.querySelectorAll('[data-toggle-good]').forEach(btn => {
-        btn.addEventListener('click', () => toggleGoodTake(parseInt(btn.dataset.toggleGood), btn));
-    });
-
-    // Delete take
-    container.querySelectorAll('[data-delete-take]').forEach(btn => {
-        btn.addEventListener('click', () => deleteTake(parseInt(btn.dataset.deleteTake)));
-    });
-
-    // Delete storyboard
-    container.querySelectorAll('[data-delete-storyboard]').forEach(btn => {
-        btn.addEventListener('click', () => deleteStoryboard(parseInt(btn.dataset.deleteStoryboard)));
-    });
-
-    // Edit storyboard
-    container.querySelectorAll('[data-edit-sb]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const takeData = JSON.parse(btn.dataset.take);
-            openEditDialog(parseInt(btn.dataset.editSb), takeData, audioSupportedModels);
-        });
-    });
-
-    // Use as first frame
-    container.querySelectorAll('[data-use-first-frame]').forEach(btn => {
-        btn.addEventListener('click', () => useAsFirstFrame(btn.dataset.useFirstFrame));
-    });
-
-    // New storyboard form
-    setupNewStoryboardForm(audioSupportedModels);
-
-    // Image picker zones (click to open native file dialog)
-    setupImagePickers(container);
-}
-
-function attachGenerateEvents(container) {
-    container.querySelectorAll('[data-generate]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const takeId = parseInt(btn.dataset.generate);
-            const originalContent = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = `<span class="loading loading-spinner loading-xs mr-1"></span>Starting...`;
-
-            try {
-                await window.go.main.App.GenerateTakeVideo(takeId);
-                // Update UI to show running state
-                updateStatusBadge(takeId, 'Running');
-                const col = document.getElementById(`sb-right-col-${takeId}`);
-                if (col) {
-                    col.innerHTML = `
-                        <div class="text-base-content flex flex-col items-center">
-                            <span class="loading loading-spinner loading-md text-primary mb-3"></span>
-                            <p class="text-sm font-medium">GENERATING...</p>
-                        </div>`;
+        const shots = ws.storyboards || [];
+        if (shots.length > 0) {
+            state.selectedShotId = prevShotId && shots.some(s => s.id === prevShotId) ? prevShotId : shots[0].id;
+            state.selectedTakeByShot = {};
+            shots.forEach(shot => {
+                const prevTake = prevTakeByShot[shot.id];
+                const fallback = shot.active_take?.id || shot.takes?.[shot.takes.length - 1]?.id || null;
+                const validPrev = prevTake && shot.takes?.some(t => t.id === prevTake) ? prevTake : fallback;
+                if (validPrev) {
+                    state.selectedTakeByShot[shot.id] = validPrev;
                 }
-                activeTasks.add(takeId);
-                if (!isPolling) {
-                    startAdaptivePolling();
-                    isPolling = true;
-                }
-            } catch (err) {
-                alert('Failed to start generation: ' + err);
-                btn.disabled = false;
-                btn.innerHTML = originalContent;
-            }
-        });
-    });
-}
-
-// ============================================================
-// Take Operations
-// ============================================================
-
-async function switchTake(takeId, sbId, version) {
-    // Update tab appearance
-    document.querySelectorAll(`.take-tab-${sbId}`).forEach(btn => {
-        btn.classList.toggle('tab-active', parseInt(btn.dataset.switchTake) === takeId);
-    });
-
-    try {
-        const take = await window.go.main.App.GetTake(takeId);
-        const contentDiv = document.getElementById(`take-content-${sbId}`);
-        if (contentDiv) {
-            contentDiv.dataset.takeId = take.id;
-            contentDiv.dataset.currentVersion = version;
-            contentDiv.innerHTML = renderTakeContent(sbId, take, version);
-            applyLanguage();
-
-            // Re-attach events for new content
-            reattachTakeEvents(contentDiv);
-
-            if (take.status === 'Running' || take.status === 'Queued') {
-                activeTasks.add(take.id);
-                if (!isPolling) { startAdaptivePolling(); isPolling = true; }
-            }
-        }
-    } catch (err) {
-        console.error('Failed to switch take:', err);
-        alert('Failed to switch take');
-    }
-}
-
-function reattachTakeEvents(contentDiv) {
-    const audioSupportedModels = pageData?.audio_supported_models || [];
-
-    contentDiv.querySelectorAll('[data-generate]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const takeId = parseInt(btn.dataset.generate);
-            const originalContent = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = `<span class="loading loading-spinner loading-xs mr-1"></span>Starting...`;
-            try {
-                await window.go.main.App.GenerateTakeVideo(takeId);
-                updateStatusBadge(takeId, 'Running');
-                const col = document.getElementById(`sb-right-col-${takeId}`);
-                if (col) col.innerHTML = `<div class="text-base-content flex flex-col items-center"><span class="loading loading-spinner loading-md text-primary mb-3"></span><p class="text-sm font-medium">GENERATING...</p></div>`;
-                activeTasks.add(takeId);
-                if (!isPolling) { startAdaptivePolling(); isPolling = true; }
-            } catch (err) {
-                alert('Failed to start generation: ' + err);
-                btn.disabled = false;
-                btn.innerHTML = originalContent;
-            }
-        });
-    });
-
-    contentDiv.querySelectorAll('[data-toggle-good]').forEach(btn => {
-        btn.addEventListener('click', () => toggleGoodTake(parseInt(btn.dataset.toggleGood), btn));
-    });
-
-    contentDiv.querySelectorAll('[data-delete-take]').forEach(btn => {
-        btn.addEventListener('click', () => deleteTake(parseInt(btn.dataset.deleteTake)));
-    });
-
-    contentDiv.querySelectorAll('[data-delete-storyboard]').forEach(btn => {
-        btn.addEventListener('click', () => deleteStoryboard(parseInt(btn.dataset.deleteStoryboard)));
-    });
-
-    contentDiv.querySelectorAll('[data-edit-sb]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const takeData = JSON.parse(btn.dataset.take);
-            openEditDialog(parseInt(btn.dataset.editSb), takeData, audioSupportedModels);
-        });
-    });
-
-    contentDiv.querySelectorAll('[data-use-first-frame]').forEach(btn => {
-        btn.addEventListener('click', () => useAsFirstFrame(btn.dataset.useFirstFrame));
-    });
-}
-
-async function toggleGoodTake(takeId, btn) {
-    try {
-        const isGood = await window.go.main.App.ToggleGoodTake(takeId);
-        if (isGood) {
-            btn.classList.add('text-pink-500');
-            btn.classList.remove('text-base-content/30');
-        } else {
-            btn.classList.remove('text-pink-500');
-            btn.classList.add('text-base-content/30');
-        }
-
-        // Update tab heart icons
-        const contentDiv = btn.closest('.take-content');
-        if (contentDiv) {
-            const sbId = contentDiv.id.replace('take-content-', '');
-            document.querySelectorAll(`.take-tab-${sbId}`).forEach(tab => {
-                const heart = tab.querySelector('span[title="Marked as Good Take"]');
-                if (heart) heart.remove();
             });
-            if (isGood) {
-                const currentTab = document.querySelector(`.take-tab-${sbId}[data-switch-take="${takeId}"]`);
-                if (currentTab) {
-                    const span = document.createElement('span');
-                    span.className = 'ml-1';
-                    span.title = 'Marked as Good Take';
-                    span.textContent = '🩷';
-                    currentTab.appendChild(span);
-                }
-            }
+        } else {
+            state.selectedShotId = null;
+            state.selectedTakeByShot = {};
         }
-    } catch (err) {
-        console.error('Toggle good take failed:', err);
+
+        syncPolling();
+    } finally {
+        isLoadingWorkspace = false;
     }
 }
 
-async function deleteTake(takeId) {
-    if (!confirm('Delete this take version?')) return;
-    try {
-        await window.go.main.App.DeleteTake(takeId);
-        // Reload the page
-        const container = document.getElementById('page-content');
-        await renderStoryboardPage(container, currentProjectId);
-    } catch (err) {
-        alert('Error deleting take: ' + err);
-    }
-}
-
-async function deleteStoryboard(sbId) {
-    const lang = getLanguage();
-    const confirmMsg = (i18nData[lang] && i18nData[lang]['sb.confirm_delete']) || 'Delete entire storyboard container?';
-    if (!confirm(confirmMsg)) return;
-    try {
-        await window.go.main.App.DeleteStoryboard(sbId);
-        const container = document.getElementById('page-content');
-        await renderStoryboardPage(container, currentProjectId);
-    } catch (err) {
-        alert('Error deleting storyboard: ' + err);
-    }
-}
-
-// ============================================================
-// Polling
-// ============================================================
-
-async function startAdaptivePolling() {
-    if (activeTasks.size === 0) {
-        isPolling = false;
+function syncPolling() {
+    const runningIds = collectRunningTakeIds();
+    if (runningIds.length === 0) {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
         return;
     }
 
-    let nextPollDelay = 3000;
-    let minReportedInterval = 999999;
-
-    const promises = Array.from(activeTasks).map(async (id) => {
-        try {
-            const data = await window.go.main.App.GetTakeStatus(id);
-            if (data.status) {
-                updateStatusBadge(id, data.status);
-                updateRightColumn(id, data);
-                const s = data.status.toLowerCase();
-                if (s === 'succeeded' || s === 'failed') {
-                    activeTasks.delete(id);
-                }
-                if (data.poll_interval) {
-                    minReportedInterval = Math.min(minReportedInterval, data.poll_interval);
-                }
+    if (!pollTimer) {
+        pollTimer = setInterval(async () => {
+            const ids = collectRunningTakeIds();
+            if (ids.length === 0) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+                return;
             }
+
+            await Promise.all(ids.map(id => window.go.main.App.GetTakeStatus(id).catch(() => null)));
+            await loadWorkspace({ preserveSelection: true });
+            renderPage();
+        }, 3500);
+    }
+}
+
+function collectRunningTakeIds() {
+    if (!state.workspace) return [];
+    const ids = [];
+    (state.workspace.storyboards || []).forEach(shot => {
+        (shot.takes || []).forEach(take => {
+            const st = (take.status || '').toLowerCase();
+            if (st === 'running' || st === 'queued') {
+                ids.push(take.id);
+            }
+        });
+    });
+    return ids;
+}
+
+function renderPage() {
+    rememberScrollPositions();
+
+    const ws = state.workspace;
+    if (!ws) {
+        rootContainer.innerHTML = '<div class="alert alert-error mt-4">加载项目失败</div>';
+        return;
+    }
+
+    const project = ws.project;
+    rootContainer.innerHTML = `
+        <div class="cinema-page">
+            <div class="cinema-topbar">
+                <a href="#/" class="cinema-back">← 返回项目</a>
+                <div class="cinema-title-wrap">
+                    <h1 class="cinema-title">${escapeHtml(project.name)}</h1>
+                    <div class="cinema-subtitle">Project #${project.id} · 比例锁定 ${escapeHtml(project.aspect_ratio || '16:9')}</div>
+                </div>
+                <button class="cinema-export-btn" data-export-project>导出 FCPXML</button>
+            </div>
+
+            <div class="cinema-panel-shell">
+                ${renderActivePanel()}
+            </div>
+
+            <div class="cinema-bottom-nav">
+                ${renderBottomNavButton(PANELS.breakdown, '分镜拆解')}
+                ${renderBottomNavButton(PANELS.assets, '资产管理')}
+                ${renderBottomNavButton(PANELS.workbench, '制作工作台')}
+            </div>
+        </div>
+    `;
+
+    attachCommonEvents();
+    attachPanelEvents();
+    applyLanguage();
+    restoreScrollPositions();
+}
+
+function rememberScrollPositions() {
+    if (!rootContainer) return;
+    SCROLL_PRESERVE_SELECTORS.forEach(selector => {
+        const el = rootContainer.querySelector(selector);
+        if (!el) return;
+        state.scrollTopBySelector[selector] = el.scrollTop;
+    });
+}
+
+function restoreScrollPositions() {
+    if (!rootContainer) return;
+    SCROLL_PRESERVE_SELECTORS.forEach(selector => {
+        const savedTop = state.scrollTopBySelector[selector];
+        if (typeof savedTop !== 'number') return;
+        const el = rootContainer.querySelector(selector);
+        if (!el) return;
+        el.scrollTop = savedTop;
+    });
+}
+
+function renderBottomNavButton(key, label) {
+    const active = state.activePanel === key ? 'active' : '';
+    return `<button class="cinema-nav-btn ${active}" data-switch-panel="${key}">${label}</button>`;
+}
+
+function renderActivePanel() {
+    switch (state.activePanel) {
+        case PANELS.assets:
+            return renderAssetsPanel();
+        case PANELS.workbench:
+            return renderWorkbenchPanel();
+        case PANELS.breakdown:
+        default:
+            return renderBreakdownPanel();
+    }
+}
+
+function renderBreakdownPanel() {
+    const ws = state.workspace;
+    const shots = ws.storyboards || [];
+
+    const shotCards = shots.length === 0
+        ? '<div class="cinema-empty">当前还没有分镜，请先在左侧导入并拆解。</div>'
+        : shots.map((shot, index) => renderShotCard(shot, index)).join('');
+
+    return `
+        <div class="breakdown-grid">
+            <section class="breakdown-import card-cinema">
+                <div class="card-head">文本/Excel 导入</div>
+                <div class="card-body">
+                    <div class="form-row">
+                        <label>API 提供商</label>
+                        <select id="llm-provider-select">
+                            <option value="ark_default" ${state.llmProvider === 'ark_default' ? 'selected' : ''}>全局 Ark（使用设置里的 API Key）</option>
+                            <option value="ark_custom" ${state.llmProvider === 'ark_custom' ? 'selected' : ''}>自定义 Ark（独立 Key）</option>
+                            <option value="openai_compatible" ${state.llmProvider === 'openai_compatible' ? 'selected' : ''}>OpenAI Compatible（独立 Key）</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label>LLM 模型</label>
+                        <input type="text" id="llm-model-input" value="${escapeHtml(state.llmModel || '')}" placeholder="例如 doubao-seed-1-6-250615">
+                    </div>
+                    <div class="form-row">
+                        <label>Base URL</label>
+                        <input type="text" id="llm-base-url-input" value="${escapeHtml(state.llmBaseURL || '')}" placeholder="例如 https://ark.cn-beijing.volces.com/api/v3">
+                    </div>
+                    <div class="form-row">
+                        <label>API Key（仅用于本次分镜拆解）</label>
+                        <input type="password" id="llm-api-key-input" value="${escapeHtml(state.llmApiKey || '')}" placeholder="可留空（全局 Ark 模式）">
+                    </div>
+                    <div class="form-row checkbox-row">
+                        <label>
+                            <input type="checkbox" id="replace-existing-input" ${state.replaceExisting ? 'checked' : ''}>
+                            覆盖当前分镜
+                        </label>
+                    </div>
+                    <div class="form-row">
+                        <label>分镜源文档（Markdown / Excel）</label>
+                        <textarea id="decompose-source" rows="16" placeholder="粘贴 markdown 文本，或先点击“导入文件”">${escapeHtml(state.decomposeText || '')}</textarea>
+                    </div>
+                    <div class="btn-row">
+                        <button class="btn-cinema secondary" data-load-source-file>导入文件</button>
+                        <button class="btn-cinema" data-run-decompose>LLM 拆解为结构化 JSON</button>
+                    </div>
+                    <div class="hint-text">
+                        输出字段固定包含：镜号/景别/运镜/画面内容/人物/场景/元素/风格/声音/时长(5或10秒)
+                    </div>
+                    <div class="hint-text">
+                        你可以为“分镜拆解”单独指定 Provider、API Key 与模型，不影响全局 Settings。
+                    </div>
+                </div>
+            </section>
+
+            <section class="breakdown-shots card-cinema">
+                <div class="card-head">分镜编辑（可手动调整/拆分/合并/删除）</div>
+                <div class="card-body shot-scroll">
+                    ${shotCards}
+                </div>
+            </section>
+        </div>
+    `;
+}
+
+function renderShotCard(shot, index) {
+    return `
+        <article class="shot-card" data-shot-card="${shot.id}">
+            <div class="shot-card-head">
+                <div class="shot-index">Shot ${index + 1}</div>
+                <div class="shot-actions">
+                    <button class="mini-btn" data-save-shot="${shot.id}">保存</button>
+                    <button class="mini-btn" data-split-shot="${shot.id}">拆分</button>
+                    <button class="mini-btn" data-merge-shot="${shot.id}">并入下一镜</button>
+                    <button class="mini-btn danger" data-delete-shot="${shot.id}">删除</button>
+                </div>
+            </div>
+
+            <div class="shot-grid-4">
+                <label>镜号<input data-field="shot_no" value="${escapeHtml(shot.shot_no || '')}"></label>
+                <label>景别<input data-field="shot_size" value="${escapeHtml(shot.shot_size || '')}"></label>
+                <label>运镜<input data-field="camera_movement" value="${escapeHtml(shot.camera_movement || '')}"></label>
+                <label>预估时长
+                    <select data-field="estimated_duration">
+                        <option value="5" ${Number(shot.estimated_duration) === 5 ? 'selected' : ''}>5 秒</option>
+                        <option value="10" ${Number(shot.estimated_duration) === 10 ? 'selected' : ''}>10 秒</option>
+                    </select>
+                </label>
+            </div>
+
+            <label>画面内容<textarea data-field="frame_content" rows="3">${escapeHtml(shot.frame_content || '')}</textarea></label>
+            <label>声音设计（可空）<textarea data-field="sound_design" rows="2">${escapeHtml(shot.sound_design || '')}</textarea></label>
+
+            ${renderRefBlock(shot.id, 'characters', '人物', shot.characters || [])}
+            ${renderRefBlock(shot.id, 'scenes', '场景', shot.scenes || [])}
+            ${renderRefBlock(shot.id, 'elements', '特殊元素', shot.elements || [])}
+            ${renderRefBlock(shot.id, 'styles', '风格', shot.styles || [])}
+        </article>
+    `;
+}
+
+function renderRefBlock(shotId, key, label, refs) {
+    const rows = (refs.length > 0 ? refs : [{ id: '', name: '', prompt: '' }]).map(ref => `
+        <div class="ref-row" data-ref-row>
+            <input data-ref-field="id" placeholder="id" value="${escapeHtml(ref.id || '')}">
+            <input data-ref-field="name" placeholder="名称" value="${escapeHtml(ref.name || '')}">
+            <input data-ref-field="prompt" placeholder="参考图提示词" value="${escapeHtml(ref.prompt || '')}">
+            <button class="mini-btn danger" data-remove-ref>×</button>
+        </div>
+    `).join('');
+
+    return `
+        <section class="ref-block" data-ref-block="${key}">
+            <div class="ref-head">
+                <strong>${label}</strong>
+                <button class="mini-btn" data-add-ref="${key}" data-shot-id="${shotId}">+ 新增</button>
+            </div>
+            <div class="ref-rows">${rows}</div>
+        </section>
+    `;
+}
+
+function renderAssetsPanel() {
+    const ws = state.workspace;
+    const tabs = [
+        { key: 'character', label: '角色库' },
+        { key: 'scene', label: '场景库' },
+        { key: 'element', label: '物品库' },
+        { key: 'style', label: '风格参考' },
+        { key: 'frames', label: '分镜首尾帧' },
+    ];
+
+    return `
+        <div class="assets-shell card-cinema">
+            <div class="card-head">资产管理（Good Take 优先 > 最新素材）</div>
+            <div class="asset-tabs">
+                ${tabs.map(tab => `<button class="asset-tab ${state.assetTab === tab.key ? 'active' : ''}" data-asset-tab="${tab.key}">${tab.label}</button>`).join('')}
+            </div>
+            <div class="card-body asset-body">
+                ${state.assetTab === 'frames' ? renderFrameAssetTab(ws.storyboards || []) : renderCatalogAssetTab(ws.asset_catalogs || [], state.assetTab)}
+            </div>
+        </div>
+    `;
+}
+
+function renderCatalogAssetTab(catalogs, tabKey) {
+    const rows = catalogs.filter(a => a.asset_type === tabKey);
+    if (rows.length === 0) {
+        return '<div class="cinema-empty">该资产库还没有内容，先在分镜拆解里创建引用。</div>';
+    }
+
+    return rows.map(asset => {
+        const activePath = asset.active?.image_path ? `/${asset.active.image_path}` : '';
+        const versionList = (asset.versions || []).map(v => {
+            const thumb = v.image_path ? `/${v.image_path}` : '';
+            return `
+                <button class="version-chip ${v.is_good ? 'good' : ''}" data-toggle-asset-good="${v.id}" title="V${v.version_no}">
+                    V${v.version_no}${v.is_good ? '★' : ''}
+                    ${thumb ? `<img src="${thumb}" alt="v${v.version_no}">` : ''}
+                </button>
+            `;
+        }).join('');
+
+        return `
+            <article class="asset-row" data-asset-row="${asset.id}">
+                <div class="asset-preview">
+                    ${activePath ? `<img src="${activePath}" alt="${escapeHtml(asset.name)}">` : '<div class="asset-placeholder">No Ref</div>'}
+                </div>
+                <div class="asset-main">
+                    <div class="asset-meta">
+                        <span class="asset-id">${escapeHtml(asset.asset_code)}</span>
+                        <input data-asset-name value="${escapeHtml(asset.name || '')}" placeholder="名称">
+                    </div>
+                    <textarea data-asset-prompt rows="2" placeholder="参考图提示词">${escapeHtml(asset.prompt || '')}</textarea>
+                    <textarea data-asset-input-images rows="2" placeholder="输入图URL（可多行，多图输入单图输出）"></textarea>
+                    <div class="asset-version-strip">${versionList || '<span class="hint-text">暂无版本</span>'}</div>
+                    <div class="btn-row">
+                        <button class="mini-btn" data-save-asset="${asset.id}">保存字段</button>
+                        <button class="mini-btn" data-upload-asset="${asset.id}">上传参考图</button>
+                        <button class="mini-btn" data-generate-asset="${asset.id}">AI 生成</button>
+                        <button class="mini-btn" data-retry-asset="${asset.id}">重试抽卡</button>
+                    </div>
+                </div>
+            </article>
+        `;
+    }).join('');
+}
+
+function renderFrameAssetTab(shots) {
+    if (shots.length === 0) {
+        return '<div class="cinema-empty">先在分镜拆解中创建分镜。</div>';
+    }
+
+    return shots.map(shot => `
+        <article class="frame-shot-row" data-frame-shot="${shot.id}">
+            <div class="frame-shot-head">
+                <strong>${escapeHtml(shot.shot_no || `Shot ${shot.shot_order}`)}</strong>
+                <span>${escapeHtml((shot.frame_content || '').slice(0, 80))}</span>
+            </div>
+            <div class="frame-grid-2">
+                ${renderFrameCol(shot, 'start', '首帧')}
+                ${renderFrameCol(shot, 'end', '尾帧')}
+            </div>
+        </article>
+    `).join('');
+}
+
+function renderFrameCol(shot, frameType, label) {
+    const list = frameType === 'start' ? (shot.start_frames || []) : (shot.end_frames || []);
+    const active = frameType === 'start' ? shot.active_start_frame : shot.active_end_frame;
+    const activeSrc = active?.image_path ? `/${active.image_path}` : '';
+
+    const versions = list.map(v => {
+        const src = v.image_path ? `/${v.image_path}` : '';
+        return `
+            <button class="version-chip ${v.is_good ? 'good' : ''}" data-toggle-frame-good="${v.id}">
+                V${v.version_no}${v.is_good ? '★' : ''}
+                ${src ? `<img src="${src}" alt="v${v.version_no}">` : ''}
+            </button>
+        `;
+    }).join('');
+
+    return `
+        <section class="frame-col" data-frame-col="${frameType}">
+            <div class="frame-title">${label}</div>
+            <div class="frame-preview">${activeSrc ? `<img src="${activeSrc}" alt="${label}">` : '<div class="asset-placeholder">No Frame</div>'}</div>
+            <textarea data-frame-prompt rows="2" placeholder="${label}提示词">${escapeHtml(shot.frame_content || '')}</textarea>
+            <textarea data-frame-input-images rows="2" placeholder="输入图URL（可选，多图支持）"></textarea>
+            <div class="asset-version-strip">${versions || '<span class="hint-text">暂无版本</span>'}</div>
+            <div class="btn-row">
+                <button class="mini-btn" data-upload-frame="${shot.id}" data-frame-type="${frameType}">上传</button>
+                <button class="mini-btn" data-generate-frame="${shot.id}" data-frame-type="${frameType}">AI 生成</button>
+                <button class="mini-btn" data-retry-frame="${shot.id}" data-frame-type="${frameType}">重试抽卡</button>
+            </div>
+        </section>
+    `;
+}
+
+function renderWorkbenchPanel() {
+    const ws = state.workspace;
+    const shots = ws.storyboards || [];
+    if (shots.length === 0) {
+        return '<div class="card-cinema"><div class="card-body cinema-empty">暂无分镜，先去“分镜拆解”导入并生成。</div></div>';
+    }
+
+    const selectedShot = getSelectedShot();
+    const selectedTake = getSelectedTake(selectedShot);
+
+    return `
+        <div class="workbench-shell">
+            <aside class="wb-left card-cinema">
+                <div class="card-head">分镜列表 / Take 切换</div>
+                <div class="card-body wb-scroll">
+                    ${(shots || []).map((shot, idx) => renderWorkbenchShotItem(shot, idx)).join('')}
+                </div>
+            </aside>
+
+            <section class="wb-center card-cinema">
+                <div class="card-head">舞台与预览</div>
+                <div class="card-body">
+                    ${renderStagePreview(selectedShot, selectedTake)}
+                </div>
+            </section>
+
+            <aside class="wb-right card-cinema">
+                <div class="card-head">生成参数（保存为新 Take）</div>
+                <div class="card-body">
+                    ${renderTakeInspector(selectedShot, selectedTake)}
+                </div>
+            </aside>
+        </div>
+        ${renderTimeline(shots)}
+    `;
+}
+
+function renderWorkbenchShotItem(shot, idx) {
+    const selected = shot.id === state.selectedShotId ? 'selected' : '';
+    const activeTakeId = state.selectedTakeByShot[shot.id] || shot.active_take?.id;
+    const takeTabs = (shot.takes || []).map((take, index) => `
+        <button class="take-pill ${activeTakeId === take.id ? 'active' : ''}" data-select-take="${take.id}" data-shot-id="${shot.id}">
+            T${index + 1}${take.is_good ? '★' : ''}
+        </button>
+    `).join('');
+
+    return `
+        <div class="wb-shot-item ${selected}" data-select-shot="${shot.id}">
+            <div class="wb-shot-line">
+                <strong>${escapeHtml(shot.shot_no || `#${idx + 1}`)}</strong>
+                <span>${escapeHtml(shot.shot_size || '')}</span>
+            </div>
+            <div class="wb-shot-content">${escapeHtml((shot.frame_content || '').slice(0, 60))}</div>
+            <div class="take-pill-row">${takeTabs || '<span class="hint-text">暂无 Take</span>'}</div>
+            <div class="mini-thumb-row">${renderShotAssetThumbs(shot)}</div>
+        </div>
+    `;
+}
+
+function renderShotAssetThumbs(shot) {
+    const refs = [
+        ...(shot.characters || []).slice(0, 2).map(r => ({ type: 'character', id: r.id })),
+        ...(shot.scenes || []).slice(0, 1).map(r => ({ type: 'scene', id: r.id })),
+        ...(shot.elements || []).slice(0, 1).map(r => ({ type: 'element', id: r.id })),
+        ...(shot.styles || []).slice(0, 1).map(r => ({ type: 'style', id: r.id })),
+    ];
+
+    const thumbs = refs.map(ref => {
+        const path = findActiveCatalogImage(ref.type, ref.id);
+        if (!path) return '';
+        return `<img src="/${path}" alt="${escapeHtml(ref.id)}">`;
+    }).filter(Boolean);
+
+    return thumbs.join('') || '<span class="hint-text">未绑定参考图</span>';
+}
+
+function renderStagePreview(shot, take) {
+    if (!shot || !take) {
+        return '<div class="cinema-empty">请选择一个分镜。</div>';
+    }
+
+    const prevShot = getPreviousShot(shot.id);
+    const prevTail = prevShot?.active_end_frame?.image_path || prevShot?.active_take?.last_frame_path || prevShot?.active_take?.last_frame_url || '';
+    const curStart = shot.active_start_frame?.image_path || take.first_frame_path || '';
+    const curEnd = shot.active_end_frame?.image_path || take.last_frame_path || take.last_frame_url || '';
+
+    const status = (take.status || '').toLowerCase();
+    const monitor = status === 'succeeded'
+        ? `<video controls class="stage-video" src="${escapeHtml(take.video_url || '')}"></video>`
+        : status === 'running' || status === 'queued'
+            ? '<div class="stage-loading">生成中...</div>'
+            : '<div class="stage-loading">当前 Take 尚未生成视频</div>';
+
+    return `
+        <div class="stage-main">${monitor}</div>
+        <div class="stage-side-frames">
+            ${renderSmallFrame(prevTail, '上一镜尾帧')}
+            ${renderSmallFrame(curStart, '本镜首帧')}
+            ${renderSmallFrame(curEnd, '本镜尾帧')}
+        </div>
+        <div class="stage-version-bar">
+            <span>Take #${findTakeIndex(shot, take.id)}</span>
+            <button class="mini-btn ${take.is_good ? 'good' : ''}" data-toggle-good-take="${take.id}">${take.is_good ? '取消 Good' : '标记 Good Take'}</button>
+            <button class="mini-btn" data-generate-take="${take.id}">${status === 'failed' ? '重试生成' : '生成视频'}</button>
+        </div>
+    `;
+}
+
+function renderSmallFrame(path, label) {
+    if (!path) {
+        return `<div class="small-frame"><div class="asset-placeholder">${label}</div></div>`;
+    }
+    const src = path.startsWith('http') ? path : `/${path.replace(/^\//, '')}`;
+    return `<div class="small-frame"><img src="${src}" alt="${escapeHtml(label)}"><span>${label}</span></div>`;
+}
+
+function renderTakeInspector(shot, take) {
+    if (!shot || !take) return '<div class="cinema-empty">请选择一个分镜。</div>';
+
+    const modelOptions = (state.workspace.models || []).map(m => `<option value="${m.id}" ${m.id === take.model_id ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('');
+    const audioSupported = (state.workspace.audio_supported_models || []).includes(take.model_id);
+    const isFlex = (take.service_tier || 'standard') === 'flex';
+    const expiresAfter = Number(take.expires_after || 0) > 0 ? Number(take.expires_after) : 86400;
+
+    return `
+        <div class="inspector" data-inspector-shot="${shot.id}" data-inspector-take="${take.id}">
+            <label>视频提示词
+                <textarea id="wb-prompt" rows="6">${escapeHtml(take.prompt || '')}</textarea>
+            </label>
+            <div class="shot-grid-2">
+                <label>目标模型
+                    <select id="wb-model">${modelOptions}</select>
+                </label>
+                <label>推理模式
+                    <select id="wb-service-tier">
+                        <option value="standard" ${!isFlex ? 'selected' : ''}>在线推理 (standard)</option>
+                        <option value="flex" ${isFlex ? 'selected' : ''}>离线推理 (flex)</option>
+                    </select>
+                </label>
+            </div>
+            <div class="shot-grid-2">
+                <label>时长
+                    <select id="wb-duration">
+                        <option value="5" ${Number(take.duration) === 5 ? 'selected' : ''}>5 秒</option>
+                        <option value="10" ${Number(take.duration) === 10 ? 'selected' : ''}>10 秒</option>
+                    </select>
+                </label>
+                <label>离线超时（秒）
+                    <input id="wb-execution-timeout" type="number" min="60" step="60" value="${expiresAfter}" ${isFlex ? '' : 'disabled'}>
+                </label>
+            </div>
+            <div class="shot-grid-2">
+                <label class="checkbox-inline">
+                    <input type="checkbox" id="wb-chain-from-prev" ${take.chain_from_prev ? 'checked' : ''}>
+                    接力上一分镜尾帧
+                </label>
+                <label class="checkbox-inline ${audioSupported ? '' : 'disabled'}">
+                    <input type="checkbox" id="wb-generate-audio" ${take.generate_audio ? 'checked' : ''} ${audioSupported ? '' : 'disabled'}>
+                    同步音效
+                </label>
+            </div>
+
+            <div class="frame-quick-view">
+                ${renderSmallFrame(shot.active_start_frame?.image_path || '', '资产首帧')}
+                ${renderSmallFrame(shot.active_end_frame?.image_path || '', '资产尾帧')}
+            </div>
+
+            <div class="offline-note">
+                <strong>离线推理说明</strong>
+                <span>时延不敏感（小时级）建议使用 <code>flex</code>，成本约为在线的 50%。设置合理超时时间，超时任务会自动终止。</span>
+            </div>
+
+            <div class="hint-text">项目比例固定：${escapeHtml(state.workspace.project.aspect_ratio || '16:9')}（创建后不可更改）</div>
+
+            <div class="btn-row">
+                <button class="btn-cinema secondary" data-save-new-take="${shot.id}">保存为新 Take</button>
+                <button class="btn-cinema" data-generate-take="${take.id}">生成当前 Take</button>
+            </div>
+        </div>
+    `;
+}
+
+function renderTimeline(shots) {
+    const clips = shots.map((shot, idx) => {
+        const take = shot.active_take;
+        const duration = Number(take?.duration || shot.estimated_duration || 5);
+        const width = Math.max(90, duration * 28);
+        const chained = take?.chain_from_prev && idx > 0;
+        return `
+            <div class="timeline-clip" style="width:${width}px" data-select-shot="${shot.id}">
+                ${chained ? '<span class="chain-flag">🔗</span>' : ''}
+                <strong>${escapeHtml(shot.shot_no || `S${idx + 1}`)}</strong>
+                <span>${duration}s</span>
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div class="timeline-shell card-cinema">
+            <div class="card-head">时间线</div>
+            <div class="card-body">
+                <div class="timeline-track">${clips}</div>
+                <div class="timeline-export-wrap">
+                    <button class="cinema-export-btn" data-export-project>导出 FCPXML</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function attachCommonEvents() {
+    rootContainer.querySelectorAll('[data-switch-panel]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            state.activePanel = btn.dataset.switchPanel;
+            renderPage();
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-export-project]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            try {
+                await window.go.main.App.ExportProject(state.projectId);
+            } catch (err) {
+                if (err) alert('导出失败: ' + err);
+            }
+        });
+    });
+}
+
+function attachPanelEvents() {
+    if (state.activePanel === PANELS.breakdown) {
+        attachBreakdownEvents();
+    } else if (state.activePanel === PANELS.assets) {
+        attachAssetEvents();
+    } else if (state.activePanel === PANELS.workbench) {
+        attachWorkbenchEvents();
+    }
+}
+
+function attachBreakdownEvents() {
+    const providerSelect = document.getElementById('llm-provider-select');
+    const baseUrlInput = document.getElementById('llm-base-url-input');
+    const apiKeyInput = document.getElementById('llm-api-key-input');
+
+    function refreshProviderFields() {
+        const provider = state.llmProvider || 'ark_default';
+        if (!baseUrlInput || !apiKeyInput) return;
+
+        if (provider === 'ark_default') {
+            baseUrlInput.disabled = true;
+            apiKeyInput.disabled = true;
+            baseUrlInput.placeholder = '使用内置 Ark 地址';
+            apiKeyInput.placeholder = '使用 Settings 中的 API Key';
+        } else if (provider === 'ark_custom') {
+            baseUrlInput.disabled = false;
+            apiKeyInput.disabled = false;
+            if (!baseUrlInput.value.trim()) {
+                baseUrlInput.value = 'https://ark.cn-beijing.volces.com/api/v3';
+                state.llmBaseURL = baseUrlInput.value;
+            }
+            baseUrlInput.placeholder = '例如 https://ark.cn-beijing.volces.com/api/v3';
+            apiKeyInput.placeholder = '输入本次调用使用的 Ark API Key';
+        } else {
+            baseUrlInput.disabled = false;
+            apiKeyInput.disabled = false;
+            baseUrlInput.placeholder = '例如 https://api.openai.com/v1';
+            apiKeyInput.placeholder = '输入 OpenAI-compatible API Key';
+        }
+    }
+
+    providerSelect?.addEventListener('change', (e) => {
+        state.llmProvider = e.target.value;
+        if (state.llmProvider === 'ark_default') {
+            state.llmBaseURL = 'https://ark.cn-beijing.volces.com/api/v3';
+            state.llmApiKey = '';
+            if (baseUrlInput) baseUrlInput.value = state.llmBaseURL;
+            if (apiKeyInput) apiKeyInput.value = '';
+        } else if (state.llmProvider === 'openai_compatible' && !state.llmBaseURL) {
+            state.llmBaseURL = 'https://api.openai.com/v1';
+            if (baseUrlInput) baseUrlInput.value = state.llmBaseURL;
+        }
+        refreshProviderFields();
+    });
+
+    document.getElementById('llm-model-input')?.addEventListener('input', (e) => {
+        state.llmModel = e.target.value.trim();
+    });
+
+    baseUrlInput?.addEventListener('input', (e) => {
+        state.llmBaseURL = e.target.value.trim();
+    });
+
+    apiKeyInput?.addEventListener('input', (e) => {
+        state.llmApiKey = e.target.value;
+    });
+
+    document.getElementById('replace-existing-input')?.addEventListener('change', (e) => {
+        state.replaceExisting = !!e.target.checked;
+    });
+
+    document.getElementById('decompose-source')?.addEventListener('input', (e) => {
+        state.decomposeText = e.target.value;
+    });
+
+    rootContainer.querySelector('[data-load-source-file]')?.addEventListener('click', async () => {
+        try {
+            const result = await window.go.main.App.SelectStoryboardSourceFile();
+            if (!result || !result.content) return;
+            state.decomposeText = result.content;
+            renderPage();
         } catch (err) {
-            console.error('Poll failed for', id, err);
+            alert('导入失败: ' + err);
         }
     });
 
-    await Promise.all(promises);
-
-    if (minReportedInterval < 999999) nextPollDelay = minReportedInterval;
-    if (nextPollDelay < 1000) nextPollDelay = 1000;
-
-    if (activeTasks.size > 0) {
-        setTimeout(startAdaptivePolling, nextPollDelay);
-    } else {
-        isPolling = false;
-    }
-}
-
-function updateStatusBadge(id, status) {
-    const badge = document.getElementById(`sb-status-${id}`);
-    if (!badge) return;
-    badge.textContent = status;
-    badge.className = 'badge badge-sm ' + getStatusBadgeClass(status);
-}
-
-function updateRightColumn(id, data) {
-    const col = document.getElementById(`sb-right-col-${id}`);
-    if (!col) return;
-    const status = data.status.toLowerCase();
-
-    if (status === 'succeeded') {
-        col.innerHTML = renderRightColumn({
-            status: 'Succeeded',
-            video_url: data.video_url,
-            last_frame_url: data.last_frame_url,
-            id: id
-        });
-        // Re-attach events
-        col.querySelectorAll('[data-use-first-frame]').forEach(btn => {
-            btn.addEventListener('click', () => useAsFirstFrame(btn.dataset.useFirstFrame));
-        });
-    } else if (status === 'failed') {
-        col.innerHTML = renderRightColumn({ status: 'Failed', id: id });
-        // Re-attach generate button
-        col.querySelectorAll('[data-generate]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const takeId = parseInt(btn.dataset.generate);
-                const originalContent = btn.innerHTML;
-                btn.disabled = true;
-                btn.innerHTML = `<span class="loading loading-spinner loading-xs mr-1"></span>Starting...`;
-                try {
-                    await window.go.main.App.GenerateTakeVideo(takeId);
-                    updateStatusBadge(takeId, 'Running');
-                    col.innerHTML = `<div class="text-base-content flex flex-col items-center"><span class="loading loading-spinner loading-md text-primary mb-3"></span><p class="text-sm font-medium">GENERATING...</p></div>`;
-                    activeTasks.add(takeId);
-                    if (!isPolling) { startAdaptivePolling(); isPolling = true; }
-                } catch (err) {
-                    alert('Failed: ' + err);
-                    btn.disabled = false;
-                    btn.innerHTML = originalContent;
-                }
-            });
-        });
-    } else if (status === 'running' || status === 'queued') {
-        if (!col.innerHTML.includes('loading')) {
-            col.innerHTML = `<div class="text-base-content flex flex-col items-center"><span class="loading loading-spinner loading-md text-primary mb-3"></span><p class="text-sm font-medium">GENERATING...</p></div>`;
-        }
-    }
-    applyLanguage();
-}
-
-// ============================================================
-// Edit Dialog
-// ============================================================
-
-let editStoryboardId = null;
-let editFirstFramePath = '';
-let editLastFramePath = '';
-
-function openEditDialog(sbId, takeData, audioSupportedModels) {
-    editStoryboardId = sbId;
-    editFirstFramePath = '';
-    editLastFramePath = '';
-    const dialog = document.getElementById('edit-dialog');
-
-    document.getElementById('edit-prompt').value = takeData.prompt || '';
-    document.getElementById('edit-model').value = takeData.model_id || '';
-    document.getElementById('edit-ratio').value = takeData.ratio || 'adaptive';
-    document.getElementById('edit-duration').value = String(takeData.duration || 5);
-    document.getElementById('edit-service-tier').value = takeData.service_tier || 'standard';
-
-    const audioCheckbox = document.getElementById('edit-generate-audio');
-    audioCheckbox.checked = takeData.generate_audio === true;
-    toggleAudioCheckbox(document.getElementById('edit-model'), audioCheckbox, audioSupportedModels);
-
-    // First frame delete option
-    const firstDelWrapper = document.getElementById('first-frame-delete-wrapper');
-    const firstDelInput = document.getElementById('edit-delete-first-frame');
-    if (firstDelInput) firstDelInput.checked = false;
-    if (takeData.first_frame_path) {
-        firstDelWrapper.classList.remove('hidden');
-    } else {
-        firstDelWrapper.classList.add('hidden');
-    }
-
-    // Last frame delete option
-    const lastDelWrapper = document.getElementById('last-frame-delete-wrapper');
-    const lastDelInput = document.getElementById('edit-delete-last-frame');
-    if (lastDelInput) lastDelInput.checked = false;
-    if (takeData.last_frame_path) {
-        lastDelWrapper.classList.remove('hidden');
-    } else {
-        lastDelWrapper.classList.add('hidden');
-    }
-
-    // Reset file picker labels
-    document.getElementById('edit-first-frame-name')?.classList.add('hidden');
-    document.getElementById('edit-last-frame-name')?.classList.add('hidden');
-
-    // Edit model change -> audio toggle
-    document.getElementById('edit-model').onchange = () => {
-        toggleAudioCheckbox(document.getElementById('edit-model'), audioCheckbox, audioSupportedModels);
-    };
-
-    // File picker buttons
-    document.getElementById('edit-first-frame-btn').onclick = async () => {
-        try {
-            const path = await window.go.main.App.SelectImageFile();
-            if (path) {
-                editFirstFramePath = path;
-                const nameEl = document.getElementById('edit-first-frame-name');
-                nameEl.textContent = '\u2713 ' + path.split('/').pop();
-                nameEl.classList.remove('hidden');
-            }
-        } catch (err) {
-            console.error('File selection failed:', err);
-        }
-    };
-
-    document.getElementById('edit-last-frame-btn').onclick = async () => {
-        try {
-            const path = await window.go.main.App.SelectImageFile();
-            if (path) {
-                editLastFramePath = path;
-                const nameEl = document.getElementById('edit-last-frame-name');
-                nameEl.textContent = '\u2713 ' + path.split('/').pop();
-                nameEl.classList.remove('hidden');
-            }
-        } catch (err) {
-            console.error('File selection failed:', err);
-        }
-    };
-
-    // Cancel button
-    document.getElementById('edit-cancel-btn').onclick = () => dialog.close();
-
-    // Submit button
-    document.getElementById('edit-submit-btn').onclick = () => submitEditForm(audioSupportedModels);
-
-    dialog.showModal();
-    applyLanguage();
-}
-
-async function submitEditForm() {
-    const dialog = document.getElementById('edit-dialog');
-
-    const params = {
-        storyboard_id: editStoryboardId,
-        prompt: document.getElementById('edit-prompt').value,
-        model_id: document.getElementById('edit-model').value,
-        ratio: document.getElementById('edit-ratio').value,
-        duration: parseInt(document.getElementById('edit-duration').value),
-        generate_audio: document.getElementById('edit-generate-audio').checked,
-        service_tier: document.getElementById('edit-service-tier').value,
-        first_frame_path: editFirstFramePath,
-        last_frame_path: editLastFramePath,
-        delete_first_frame: document.getElementById('edit-delete-first-frame')?.checked || false,
-        delete_last_frame: document.getElementById('edit-delete-last-frame')?.checked || false,
-    };
-
-    try {
-        await window.go.main.App.UpdateStoryboard(params);
-        dialog.close();
-        const container = document.getElementById('page-content');
-        await renderStoryboardPage(container, currentProjectId);
-    } catch (err) {
-        alert('Failed to update: ' + err);
-    }
-}
-
-// ============================================================
-// New Storyboard Form
-// ============================================================
-
-function setupNewStoryboardForm(audioSupportedModels) {
-    const modelSelect = document.getElementById('new-model');
-    const audioCheckbox = document.getElementById('new-generate-audio');
-
-    if (modelSelect && audioCheckbox) {
-        modelSelect.addEventListener('change', () => toggleAudioCheckbox(modelSelect, audioCheckbox, audioSupportedModels));
-        toggleAudioCheckbox(modelSelect, audioCheckbox, audioSupportedModels);
-    }
-
-    document.getElementById('add-storyboard-btn')?.addEventListener('click', async () => {
-        const prompt = document.getElementById('new-prompt').value.trim();
-        if (!prompt) {
-            alert('Please enter a prompt');
+    rootContainer.querySelector('[data-run-decompose]')?.addEventListener('click', async () => {
+        const sourceText = (state.decomposeText || '').trim();
+        if (!sourceText) {
+            alert('请先输入分镜文案或导入文件');
             return;
         }
 
-        const params = {
-            project_id: currentProjectId,
-            prompt: prompt,
-            model_id: document.getElementById('new-model').value,
-            ratio: document.getElementById('new-ratio').value,
-            duration: parseInt(document.getElementById('new-duration').value),
-            generate_audio: document.getElementById('new-generate-audio').checked,
-            service_tier: document.getElementById('new-service-tier').value,
-            first_frame_path: newFirstFramePath,
-            last_frame_path: newLastFramePath,
-        };
-
         try {
-            await window.go.main.App.CreateStoryboard(params);
-            const container = document.getElementById('page-content');
-            await renderStoryboardPage(container, currentProjectId);
+            await window.go.main.App.DecomposeStoryboardWithLLM({
+                project_id: state.projectId,
+                source_text: sourceText,
+                llm_model_id: state.llmModel || state.workspace.llm_model_default,
+                provider: state.llmProvider || 'ark_default',
+                api_key: state.llmApiKey || '',
+                base_url: state.llmBaseURL || '',
+                replace_existing: state.replaceExisting,
+            });
+            await loadWorkspace({ preserveSelection: false });
+            renderPage();
         } catch (err) {
-            alert('Failed to create storyboard: ' + err);
+            alert('拆解失败: ' + err);
         }
     });
-}
 
-// ============================================================
-// Use As First Frame
-// ============================================================
+    refreshProviderFields();
 
-async function useAsFirstFrame(imagePath) {
-    try {
-        // Strip leading slash to get local path for Go
-        const localPath = imagePath.startsWith('/') ? imagePath.substring(1) : imagePath;
-        const uploadPath = await window.go.main.App.CopyToUploads(localPath);
-        if (!uploadPath) return;
+    rootContainer.querySelectorAll('[data-add-ref]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const shotId = Number(btn.dataset.shotId);
+            const key = btn.dataset.addRef;
+            const card = rootContainer.querySelector(`[data-shot-card="${shotId}"]`);
+            const block = card?.querySelector(`[data-ref-block="${key}"] .ref-rows`);
+            if (!block) return;
+            block.insertAdjacentHTML('beforeend', `
+                <div class="ref-row" data-ref-row>
+                    <input data-ref-field="id" placeholder="id" value="">
+                    <input data-ref-field="name" placeholder="名称" value="">
+                    <input data-ref-field="prompt" placeholder="参考图提示词" value="">
+                    <button class="mini-btn danger" data-remove-ref>×</button>
+                </div>
+            `);
+            attachBreakdownEvents();
+        });
+    });
 
-        newFirstFramePath = uploadPath;
+    rootContainer.querySelectorAll('[data-remove-ref]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const row = btn.closest('[data-ref-row]');
+            if (row) row.remove();
+        });
+    });
 
-        const dropZone = document.getElementById('drop-first-frame');
-        const placeholder = dropZone.querySelector('.upload-placeholder');
-        const previewContainer = dropZone.querySelector('.preview-container');
-        const preview = dropZone.querySelector('.preview-img');
+    rootContainer.querySelectorAll('[data-save-shot]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const shotId = Number(btn.dataset.saveShot);
+            const card = rootContainer.querySelector(`[data-shot-card="${shotId}"]`);
+            if (!card) return;
 
-        preview.src = '/' + uploadPath;
-        previewContainer.classList.remove('hidden');
-        placeholder.classList.add('hidden');
+            const payload = {
+                storyboard_id: shotId,
+                shot_no: getFieldValue(card, 'shot_no'),
+                shot_size: getFieldValue(card, 'shot_size'),
+                camera_movement: getFieldValue(card, 'camera_movement'),
+                frame_content: getFieldValue(card, 'frame_content'),
+                sound_design: getFieldValue(card, 'sound_design'),
+                estimated_duration: Number(getFieldValue(card, 'estimated_duration') || 5),
+                duration_fine: 0,
+                characters: collectRefs(card, 'characters'),
+                scenes: collectRefs(card, 'scenes'),
+                elements: collectRefs(card, 'elements'),
+                styles: collectRefs(card, 'styles'),
+            };
 
-        // Scroll to form
-        const formSection = document.querySelector('.mt-10');
-        if (formSection) {
-            formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            dropZone.classList.add('ring-2', 'ring-primary');
-            setTimeout(() => dropZone.classList.remove('ring-2', 'ring-primary'), 1500);
-        }
-    } catch (err) {
-        console.error('Failed to set first frame:', err);
-        alert('Failed to load the image');
-    }
-}
-
-// ============================================================
-// Image Picker (native file dialog)
-// ============================================================
-
-function setupImagePickers(container) {
-    // Click on picker zones to open native file dialog
-    container.querySelectorAll('[data-pick-image]').forEach(zone => {
-        zone.addEventListener('click', async (e) => {
-            if (e.target.closest('.clear-btn')) return;
-            const type = zone.dataset.pickImage;
             try {
-                const path = await window.go.main.App.SelectImageFile();
-                if (!path) return;
-
-                if (type === 'first') {
-                    newFirstFramePath = path;
-                } else {
-                    newLastFramePath = path;
-                }
-
-                const preview = zone.querySelector('.preview-img');
-                const placeholder = zone.querySelector('.upload-placeholder');
-                const previewContainer = zone.querySelector('.preview-container');
-                preview.src = '/' + path;
-                previewContainer.classList.remove('hidden');
-                placeholder.classList.add('hidden');
+                await window.go.main.App.UpdateShotMetadata(payload);
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
             } catch (err) {
-                console.error('File selection failed:', err);
+                alert('保存失败: ' + err);
             }
         });
     });
 
-    // Clear image buttons
-    container.querySelectorAll('[data-clear-image]').forEach(btn => {
+    rootContainer.querySelectorAll('[data-delete-shot]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const shotId = Number(btn.dataset.deleteShot);
+            if (!confirm('确认删除这个分镜？')) return;
+            try {
+                await window.go.main.App.DeleteV1Shot(shotId);
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                alert('删除失败: ' + err);
+            }
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-merge-shot]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const shotId = Number(btn.dataset.mergeShot);
+            try {
+                await window.go.main.App.MergeShotWithNext(shotId);
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                alert('合并失败: ' + err);
+            }
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-split-shot]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const shotId = Number(btn.dataset.splitShot);
+            const second = prompt('请输入拆分后“第二镜”的画面内容');
+            if (second === null) return;
+            try {
+                await window.go.main.App.SplitShot({
+                    storyboard_id: shotId,
+                    first_content: '',
+                    second_content: second,
+                });
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                alert('拆分失败: ' + err);
+            }
+        });
+    });
+}
+
+function attachAssetEvents() {
+    rootContainer.querySelectorAll('[data-asset-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            state.assetTab = btn.dataset.assetTab;
+            renderPage();
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-save-asset]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id = Number(btn.dataset.saveAsset);
+            const row = rootContainer.querySelector(`[data-asset-row="${id}"]`);
+            if (!row) return;
+            try {
+                await window.go.main.App.UpdateAssetCatalog({
+                    catalog_id: id,
+                    name: row.querySelector('[data-asset-name]')?.value || '',
+                    prompt: row.querySelector('[data-asset-prompt]')?.value || '',
+                });
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                alert('保存资产失败: ' + err);
+            }
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-upload-asset]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id = Number(btn.dataset.uploadAsset);
+            try {
+                await window.go.main.App.UploadAssetImage(id);
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                alert('上传失败: ' + err);
+            }
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-generate-asset], [data-retry-asset]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id = Number(btn.dataset.generateAsset || btn.dataset.retryAsset);
+            const row = rootContainer.querySelector(`[data-asset-row="${id}"]`);
+            if (!row) return;
+            const prompt = row.querySelector('[data-asset-prompt]')?.value || '';
+            const inputImages = parseMultilineList(row.querySelector('[data-asset-input-images]')?.value || '');
+            try {
+                await window.go.main.App.GenerateAssetImage({
+                    catalog_id: id,
+                    model_id: state.workspace.image_model_default,
+                    prompt,
+                    input_images: inputImages,
+                });
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                alert('生成失败: ' + err);
+            }
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-toggle-asset-good]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id = Number(btn.dataset.toggleAssetGood);
+            try {
+                await window.go.main.App.ToggleAssetVersionGood(id);
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                alert('设置 Good 失败: ' + err);
+            }
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-upload-frame]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            try {
+                await window.go.main.App.UploadShotFrame({
+                    storyboard_id: Number(btn.dataset.uploadFrame),
+                    frame_type: btn.dataset.frameType,
+                });
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                alert('上传帧失败: ' + err);
+            }
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-generate-frame], [data-retry-frame]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const shotId = Number(btn.dataset.generateFrame || btn.dataset.retryFrame);
+            const frameType = btn.dataset.frameType;
+            const shotRow = rootContainer.querySelector(`[data-frame-shot="${shotId}"]`);
+            const col = shotRow?.querySelector(`[data-frame-col="${frameType}"]`);
+            if (!col) return;
+            const prompt = col.querySelector('[data-frame-prompt]')?.value || '';
+            const inputImages = parseMultilineList(col.querySelector('[data-frame-input-images]')?.value || '');
+
+            try {
+                await window.go.main.App.GenerateShotFrame({
+                    storyboard_id: shotId,
+                    frame_type: frameType,
+                    model_id: state.workspace.image_model_default,
+                    prompt,
+                    input_images: inputImages,
+                });
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                alert('生成帧失败: ' + err);
+            }
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-toggle-frame-good]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            try {
+                await window.go.main.App.ToggleShotFrameGood(Number(btn.dataset.toggleFrameGood));
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                alert('设置帧 Good 失败: ' + err);
+            }
+        });
+    });
+}
+
+function attachWorkbenchEvents() {
+    rootContainer.querySelector('#wb-service-tier')?.addEventListener('change', (e) => {
+        const timeoutInput = rootContainer.querySelector('#wb-execution-timeout');
+        if (!timeoutInput) return;
+        const isFlex = e.target.value === 'flex';
+        timeoutInput.disabled = !isFlex;
+        if (isFlex && (!timeoutInput.value || Number(timeoutInput.value) <= 0)) {
+            timeoutInput.value = '86400';
+        }
+    });
+
+    rootContainer.querySelectorAll('[data-select-shot]').forEach(el => {
+        el.addEventListener('click', () => {
+            state.selectedShotId = Number(el.dataset.selectShot);
+            renderPage();
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-select-take]').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const type = btn.dataset.clearImage;
-            if (type === 'first') {
-                newFirstFramePath = '';
-            } else {
-                newLastFramePath = '';
+            const shotId = Number(btn.dataset.shotId);
+            const takeId = Number(btn.dataset.selectTake);
+            state.selectedShotId = shotId;
+            state.selectedTakeByShot[shotId] = takeId;
+            renderPage();
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-toggle-good-take]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            try {
+                await window.go.main.App.ToggleGoodTake(Number(btn.dataset.toggleGoodTake));
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                alert('标记 Good Take 失败: ' + err);
             }
-            const zone = btn.closest('.drag-drop-zone');
-            zone.querySelector('.preview-container').classList.add('hidden');
-            zone.querySelector('.upload-placeholder').classList.remove('hidden');
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-generate-take]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const takeId = Number(btn.dataset.generateTake);
+            try {
+                await window.go.main.App.GenerateTakeVideo(takeId);
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                alert('生成失败: ' + err);
+            }
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-save-new-take]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const shotId = Number(btn.dataset.saveNewTake);
+            const shot = (state.workspace.storyboards || []).find(s => s.id === shotId);
+            if (!shot) return;
+
+            const prompt = rootContainer.querySelector('#wb-prompt')?.value || '';
+            const modelId = rootContainer.querySelector('#wb-model')?.value || '';
+            const duration = Number(rootContainer.querySelector('#wb-duration')?.value || 5);
+            const serviceTier = rootContainer.querySelector('#wb-service-tier')?.value || 'standard';
+            const executionExpiresAfterRaw = Number(rootContainer.querySelector('#wb-execution-timeout')?.value || 0);
+            const executionExpiresAfter = serviceTier === 'flex'
+                ? Math.max(60, Math.floor(executionExpiresAfterRaw || 86400))
+                : 0;
+            const chainFromPrev = !!rootContainer.querySelector('#wb-chain-from-prev')?.checked;
+            const generateAudio = !!rootContainer.querySelector('#wb-generate-audio')?.checked;
+
+            const firstFrameFromAsset = shot.active_start_frame?.image_path || '';
+            const lastFrameFromAsset = shot.active_end_frame?.image_path || '';
+
+            try {
+                await window.go.main.App.UpdateStoryboard({
+                    storyboard_id: shotId,
+                    prompt,
+                    model_id: modelId,
+                    ratio: state.workspace.project.aspect_ratio || '16:9',
+                    duration,
+                    generate_audio: generateAudio,
+                    service_tier: serviceTier,
+                    execution_expires_after: executionExpiresAfter,
+                    first_frame_path: chainFromPrev ? '' : firstFrameFromAsset,
+                    last_frame_path: lastFrameFromAsset,
+                    delete_first_frame: false,
+                    delete_last_frame: false,
+                    chain_from_prev: chainFromPrev,
+                });
+                await loadWorkspace({ preserveSelection: true });
+                const refreshedShot = (state.workspace.storyboards || []).find(s => s.id === shotId);
+                const latestTake = refreshedShot?.takes?.[refreshedShot.takes.length - 1];
+                if (latestTake) {
+                    state.selectedTakeByShot[shotId] = latestTake.id;
+                }
+                renderPage();
+            } catch (err) {
+                alert('保存新 Take 失败: ' + err);
+            }
         });
     });
 }
 
-// ============================================================
-// Utilities
-// ============================================================
-
-function toggleAudioCheckbox(modelSelect, audioCheckbox, audioSupportedModels) {
-    const supportsAudio = audioSupportedModels.includes(modelSelect.value);
-    audioCheckbox.disabled = !supportsAudio;
-    if (!supportsAudio) {
-        audioCheckbox.checked = false;
-        audioCheckbox.parentElement.classList.add('opacity-50', 'cursor-not-allowed');
-    } else {
-        audioCheckbox.parentElement.classList.remove('opacity-50', 'cursor-not-allowed');
-    }
+function getSelectedShot() {
+    const shots = state.workspace?.storyboards || [];
+    if (!shots.length) return null;
+    return shots.find(s => s.id === state.selectedShotId) || shots[0];
 }
 
-function getStatusBadgeClass(status) {
-    switch ((status || '').toLowerCase()) {
-        case 'succeeded': return 'badge-success';
-        case 'failed': return 'badge-error';
-        case 'running': case 'queued': return 'badge-info';
-        default: return 'badge-ghost';
-    }
+function getSelectedTake(shot) {
+    if (!shot) return null;
+    const takes = shot.takes || [];
+    if (!takes.length) return null;
+    const selectedId = state.selectedTakeByShot[shot.id];
+    return takes.find(t => t.id === selectedId) || takes.find(t => t.id === shot.active_take?.id) || takes[takes.length - 1];
+}
+
+function getPreviousShot(shotId) {
+    const shots = state.workspace?.storyboards || [];
+    const idx = shots.findIndex(s => s.id === shotId);
+    if (idx <= 0) return null;
+    return shots[idx - 1];
+}
+
+function findTakeIndex(shot, takeId) {
+    const idx = (shot.takes || []).findIndex(t => t.id === takeId);
+    return idx >= 0 ? idx + 1 : '-';
+}
+
+function findActiveCatalogImage(assetType, assetCode) {
+    const catalogs = state.workspace?.asset_catalogs || [];
+    const catalog = catalogs.find(c => c.asset_type === assetType && c.asset_code === assetCode);
+    return catalog?.active?.image_path || '';
+}
+
+function getFieldValue(card, field) {
+    const el = card.querySelector(`[data-field="${field}"]`);
+    return el ? el.value : '';
+}
+
+function collectRefs(card, key) {
+    const rows = card.querySelectorAll(`[data-ref-block="${key}"] [data-ref-row]`);
+    return Array.from(rows).map(row => ({
+        id: row.querySelector('[data-ref-field="id"]')?.value?.trim() || '',
+        name: row.querySelector('[data-ref-field="name"]')?.value?.trim() || '',
+        prompt: row.querySelector('[data-ref-field="prompt"]')?.value?.trim() || '',
+    })).filter(r => r.id || r.name || r.prompt);
+}
+
+function parseMultilineList(value) {
+    return String(value || '')
+        .split(/[\n,]/)
+        .map(v => v.trim())
+        .filter(Boolean);
 }
 
 function escapeHtml(text) {
     const div = document.createElement('div');
-    div.textContent = text || '';
+    div.textContent = text == null ? '' : String(text);
     return div.innerHTML;
 }

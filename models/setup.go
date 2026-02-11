@@ -14,7 +14,15 @@ func InitDB() {
 		panic("failed to connect database")
 	}
 
-	DB.AutoMigrate(&Project{}, &Storyboard{}, &Take{}, &Setting{})
+	DB.AutoMigrate(
+		&Project{},
+		&Storyboard{},
+		&Take{},
+		&Setting{},
+		&AssetCatalog{},
+		&AssetVersion{},
+		&ShotFrameVersion{},
+	)
 
 	// Migrate existing Storyboard data to Takes
 	// We use raw SQL to avoid needing the old struct definition
@@ -36,4 +44,11 @@ func InitDB() {
 
 	// Migrate existing projects without model_version to v1.x
 	DB.Exec(`UPDATE projects SET model_version = ? WHERE model_version IS NULL OR model_version = ''`, ModelVersionV1)
+	// Default fixed aspect ratio for legacy projects
+	DB.Exec(`UPDATE projects SET aspect_ratio = '16:9' WHERE aspect_ratio IS NULL OR aspect_ratio = ''`)
+
+	// Initialize shot order/duration defaults for legacy rows
+	DB.Exec(`UPDATE storyboards SET shot_order = id WHERE shot_order IS NULL OR shot_order = 0`)
+	DB.Exec(`UPDATE storyboards SET estimated_duration = 5 WHERE estimated_duration IS NULL OR estimated_duration = 0`)
+	DB.Exec(`UPDATE takes SET generation_mode = 'standard' WHERE generation_mode IS NULL OR generation_mode = ''`)
 }
