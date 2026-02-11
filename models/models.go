@@ -47,4 +47,10 @@ type Take struct {
 	CreatedAt          time.Time `json:"created_at"`
 }
 
+// Setting stores key-value configuration (e.g. API key)
+type Setting struct {
+	Key   string `gorm:"primaryKey" json:"key"`
+	Value string `json:"value"`
+}
+
 var DB *gorm.DB

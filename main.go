@@ -1,66 +1,90 @@
 package main
 
 import (
-	"html/template"
+	"embed"
 	"log"
-	"seedance-client/handlers"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"seedance-client/config"
 	"seedance-client/models"
 	"seedance-client/services"
 
-	"github.com/gin-gonic/gin"
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
 
+//go:embed all:frontend/dist
+var assets embed.FS
+
 func main() {
+	// Initialize data directory (must be first)
+	config.InitDataDir()
+
 	// Initialize Database
 	models.InitDB()
-
-	// Initialize Services
-	handlers.InitService()
 
 	// Start background asset downloader
 	services.StartBackgroundDownloader()
 
-	r := gin.Default()
+	app := NewApp()
 
-	// Load embedded templates
-	tmpl := template.Must(template.New("").Funcs(template.FuncMap{
-		"add": func(a, b int) int {
-			return a + b
+	err := wails.Run(&options.App{
+		Title:            "Spark (火种)",
+		Width:            1280,
+		Height:           850,
+		MinWidth:         900,
+		MinHeight:        600,
+		DisableResize:    false,
+		Fullscreen:       false,
+		WindowStartState: options.Normal,
+		AssetServer: &assetserver.Options{
+			Assets:  assets,
+			Handler: NewFileHandler(),
 		},
-	}).ParseFS(templatesFS, "templates/*.html"))
-	r.SetHTMLTemplate(tmpl)
+		OnStartup: app.startup,
+		Bind: []interface{}{
+			app,
+		},
+	})
 
-	// Static files - uploads and downloads need to be served from disk
-	r.Static("/uploads", "./uploads")
-	r.Static("/downloads", "./downloads")
-
-	// Middleware to load API key from cookie
-	r.Use(handlers.LoadAPIKeyFromCookie())
-
-	// Routes
-	r.GET("/", handlers.ListProjects)
-	r.POST("/projects", handlers.CreateProject)
-	r.POST("/projects/delete/:id", handlers.DeleteProject)
-	r.GET("/projects/:id", handlers.GetProject)
-	r.GET("/projects/:id/export", handlers.ExportProject)
-	r.POST("/settings/apikey", handlers.UpdateAPIKey)
-
-	// Storyboard Routes
-	// Storyboard Routes
-	r.POST("/projects/:id/storyboards", handlers.CreateStoryboard)
-	r.POST("/storyboards/delete/:sid", handlers.DeleteStoryboard)
-	r.POST("/storyboards/:sid/update", handlers.UpdateStoryboard)
-	r.GET("/storyboards/:sid/takes", handlers.ListTakes)
-
-	// Take Routes
-	r.POST("/takes/:tid/generate", handlers.GenerateTakeVideo)
-	r.GET("/takes/:tid/status", handlers.GetTakeStatus)
-	r.GET("/takes/:tid", handlers.GetTake)
-	r.POST("/takes/:tid/toggle_good", handlers.ToggleGoodTake)
-	r.POST("/takes/delete/:tid", handlers.DeleteTake)
-
-	log.Println("Server starting on :23313")
-	if err := r.Run(":23313"); err != nil {
-		log.Fatal(err)
+	if err != nil {
+		log.Fatal("Error:", err.Error())
 	}
+}
+
+// FileHandler serves local upload/download files from disk
+type FileHandler struct{}
+
+func NewFileHandler() *FileHandler {
+	return &FileHandler{}
+}
+
+func (h *FileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	urlPath := r.URL.Path
+
+	// Serve local files from uploads/ and downloads/ directories
+	if strings.HasPrefix(urlPath, "/uploads/") || strings.HasPrefix(urlPath, "/downloads/") {
+		// Get the relative part (uploads/xxx.png or downloads/xxx.mp4)
+		relPath := filepath.Clean(strings.TrimPrefix(urlPath, "/"))
+
+		// Security: ensure the path doesn't escape these directories
+		if !strings.HasPrefix(relPath, "uploads") && !strings.HasPrefix(relPath, "downloads") {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+
+		// Resolve to absolute path in the data directory
+		absPath := config.ToAbsolutePath(relPath)
+
+		if _, err := os.Stat(absPath); err == nil {
+			http.ServeFile(w, r, absPath)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNotFound)
 }

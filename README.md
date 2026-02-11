@@ -1,6 +1,6 @@
 # Seedance Client
 
-基于 [火山引擎 Seedance](https://www.volcengine.com/docs/6791/1347773) API 的视频生成管理客户端。
+基于 [火山引擎 Seedance](https://www.volcengine.com/docs/6791/1347773) API 的视频生成管理桌面客户端。
 
 ## 功能特性
 
@@ -18,12 +18,12 @@
 - 🔁 **失败重试** - 生成失败时可一键重试
 - ✏️ **编辑分镜** - 支持修改已创建的分镜参数
 - 🌐 **多语言** - 支持中英文界面切换
-- 📦 **单文件部署** - 模板嵌入二进制，无需额外文件
+- 🖥️ **原生桌面** - 基于 Wails 的跨平台桌面应用，支持 macOS / Windows / Linux
 
 ## 技术栈
 
-- **后端**: Go + Gin + GORM
-- **前端**: HTML + TailwindCSS + Material Design 3
+- **后端**: Go + GORM + [Wails v2](https://wails.io/)
+- **前端**: Vanilla JS + Vite + TailwindCSS + DaisyUI
 - **数据库**: SQLite
 - **API**: 火山引擎 Ark Runtime SDK
 
@@ -32,73 +32,69 @@
 ### 环境要求
 
 - Go 1.21+
+- Node.js 18+
+- [Wails CLI](https://wails.io/docs/gettingstarted/installation) (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
 - 火山引擎 API Key
 
-### 安装
+### 从 Release 安装
+
+前往 [Releases](../../releases) 页面下载对应平台的安装包：
+
+| 平台 | 文件 |
+| --- | --- |
+| macOS (Apple Silicon) | `seedance-client-macos-arm64.zip` |
+| macOS (Intel) | `seedance-client-macos-amd64.zip` |
+| Windows | `seedance-client-windows-amd64.zip` |
+| Linux | `seedance-client-linux-amd64.tar.gz` |
+
+### 从源码构建
 
 ```bash
 # 克隆项目
 git clone <your-repo-url>
 cd seedance-client
 
-# 安装依赖
-go mod download
+# 开发模式（热重载）
+wails dev
 
-# 设置环境变量（可选）
-export ARK_API_KEY="your-api-key-here"
-
-# 编译运行
-go build -o seedance-client .
-./seedance-client
-
+# 构建桌面应用
+wails build
+# 产物：build/bin/seedance-client.app (macOS) / seedance-client.exe (Windows)
 ```
 
-或者前往 Releases 页面下载编译好的二进制文件，解压并运行。
-
-### 访问
-
-打开浏览器访问 [http://localhost:23313](https://www.google.com/search?q=http://localhost:23313)
+首次启动后，在右上角 **Settings** 中填入 API Key 即可开始使用。
 
 ## 项目结构
 
 ```
 seedance-client/
-├── main.go              # 入口文件
-├── handlers/            # HTTP 处理器
-│   ├── project.go       # 项目相关接口
-│   ├── storyboard.go    # 分镜相关接口
-│   └── take.go          # 版本相关接口
+├── main.go              # Wails 应用入口
+├── app.go               # 应用逻辑（暴露给前端的方法）
+├── wails.json           # Wails 配置
+├── config/              # 配置
+│   ├── config.go        # 模型配置加载
+│   └── models.json      # 模型定义和定价
 ├── models/              # 数据模型
-│   ├── models.go        # Project, Storyboard, Take 模型
-│   └── db.go            # 数据库初始化
+│   ├── models.go        # Project, Storyboard, Take, Setting 模型
+│   └── setup.go         # 数据库初始化
 ├── services/            # 服务层
 │   ├── volcengine_service.go  # 火山引擎 API 封装
+│   ├── download_service.go    # 资源下载服务
 │   └── export_service.go      # 导出服务 (ZIP/FCPXML)
-├── templates/           # HTML 模板 (嵌入二进制)
-│   ├── header.html      # 公共头部（含导航、样式、i18n）
-│   ├── projects.html    # 项目列表页 + 开支看板
-│   └── storyboard.html  # 分镜详情页 + 版本管理
-└── uploads/             # 上传的图片和生成的视频
+├── frontend/            # 前端 (Vite + TailwindCSS + DaisyUI)
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── tailwind.config.js
+│   └── src/
+│       ├── main.js      # 入口 + 路由 + 导航栏
+│       ├── projects.js  # 项目列表页 + 开支看板
+│       ├── storyboard.js# 分镜详情页 + 版本管理
+│       ├── i18n.js      # 国际化
+│       └── style.css    # 样式
+├── uploads/             # 上传的图片
+└── downloads/           # 缓存的视频和帧
 ```
-
-## API 端点
-
-| 方法 | 路径 | 描述 |
-| --- | --- | --- |
-| GET | `/` | 项目列表 + 开支看板 |
-| POST | `/projects` | 创建项目 |
-| POST | `/projects/delete/:id` | 删除项目 |
-| GET | `/projects/:id` | 项目分镜详情 |
-| GET | `/projects/:id/export` | 导出项目素材包 (ZIP) |
-| POST | `/projects/:id/storyboards` | 创建分镜 |
-| POST | `/storyboards/delete/:sid` | 删除分镜容器 |
-| POST | `/storyboards/:sid/update` | 编辑分镜 (创建新版本) |
-| GET | `/takes/:tid` | 获取版本详情 |
-| POST | `/takes/:tid/generate` | 开始生成视频 |
-| GET | `/takes/:tid/status` | 查询生成状态 |
-| POST | `/takes/:tid/toggle_good` | 标记/取消最佳版本 |
-| POST | `/takes/delete/:tid` | 删除版本 |
-| POST | `/settings/apikey` | 更新 API Key |
 
 ## 支持的模型
 

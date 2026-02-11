@@ -1,6 +1,5 @@
 name: Build and Release
 
-# 触发条件：当推送以 'v' 开头的标签时触发 (例如 v1.0.0)
 on:
   push:
     tags:
@@ -11,42 +10,38 @@ permissions:
 
 jobs:
   release:
-    name: Build for ${{ matrix.os }}
+    name: Build for ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
-          # Linux (AMD64)
-          - os: ubuntu-latest
-            goos: linux
-            goarch: amd64
-            output_name: seedance-client-linux-amd64
-            archive_name: seedance-client-linux-amd64.tar.gz
-            asset_path: seedance-client-linux-amd64.tar.gz
-
-          # Windows (AMD64)
-          - os: windows-latest
-            goos: windows
-            goarch: amd64
-            output_name: seedance-client.exe
-            archive_name: seedance-client-windows-amd64.zip
-            asset_path: seedance-client-windows-amd64.zip
-
-          # macOS (Apple Silicon - M1/M2/M3) - 目前 macos-latest 默认为 arm64
+          # macOS (Apple Silicon)
           - os: macos-latest
-            goos: darwin
-            goarch: arm64
-            output_name: seedance-client-macos-arm64
-            archive_name: seedance-client-macos-arm64.tar.gz
-            asset_path: seedance-client-macos-arm64.tar.gz
-            
-          # macOS (Intel) - 必须使用专门的 macos-15-intel 标签
-          - os: macos-15-intel # 更新：使用 macos-15-intel 替代已弃用的 macos-13
-            goos: darwin
-            goarch: amd64
-            output_name: seedance-client-macos-amd64
-            archive_name: seedance-client-macos-amd64.tar.gz
-            asset_path: seedance-client-macos-amd64.tar.gz
+            platform: macOS-arm64
+            build_flags: ""
+            archive_name: seedance-client-macos-arm64.zip
+            app_path: build/bin/seedance-client.app
+
+          # macOS (Intel)
+          - os: macos-13
+            platform: macOS-amd64
+            build_flags: ""
+            archive_name: seedance-client-macos-amd64.zip
+            app_path: build/bin/seedance-client.app
+
+          # Windows
+          - os: windows-latest
+            platform: Windows-amd64
+            build_flags: "-nsis"
+            archive_name: seedance-client-windows-amd64.zip
+            app_path: build/bin/seedance-client.exe
+
+          # Linux
+          - os: ubuntu-latest
+            platform: Linux-amd64
+            build_flags: ""
+            archive_name: seedance-client-linux-amd64.tar.gz
+            app_path: build/bin/seedance-client
 
     steps:
       - name: Checkout code
@@ -55,34 +50,48 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25' # 您的 go.mod 指定了 go 1.25.6
+          go-version: '1.25'
           check-latest: true
 
-      - name: Build Binary
-        shell: bash
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
-          # 开启 CGO 以支持 SQLite
-          export CGO_ENABLED=1
-          export GOOS=${{ matrix.goos }}
-          export GOARCH=${{ matrix.goarch }}
-          
-          # 编译命令：-trimpath 移除路径信息，-ldflags "-s -w" 减小体积
-          go build -trimpath -ldflags "-s -w" -o ${{ matrix.output_name }} .
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      - name: Build with Wails
+        run: wails build ${{ matrix.build_flags }}
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd build/bin
+          zip -r ../../${{ matrix.archive_name }} seedance-client.app
 
       - name: Package (Windows)
-        if: matrix.goos == 'windows'
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          Compress-Archive -Path ${{ matrix.output_name }} -DestinationPath ${{ matrix.archive_name }}
+          Compress-Archive -Path ${{ matrix.app_path }} -DestinationPath ${{ matrix.archive_name }}
 
-      - name: Package (Unix)
-        if: matrix.goos != 'windows'
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
         run: |
-          tar -czvf ${{ matrix.archive_name }} ${{ matrix.output_name }}
+          tar -czvf ${{ matrix.archive_name }} -C build/bin seedance-client
 
       - name: Upload Release Assets
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: ${{ matrix.asset_path }}
+          files: ${{ matrix.archive_name }}
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

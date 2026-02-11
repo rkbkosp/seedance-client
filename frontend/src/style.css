@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    font-family: 'Inter', sans-serif;
+}
+
+/* Override DaisyUI defaults for compact design */
+.card {
+    border-radius: 0.375rem;
+}
+
+.btn {
+    border-radius: 0.375rem;
+}
+
+.input,
+.select,
+.textarea {
+    border-radius: 0.375rem;
+}
+
+.modal-box {
+    border-radius: 0.375rem;
+}
+
+.badge {
+    border-radius: 0.25rem;
+}
+
+/* Wails window drag area */
+.wails-drag {
+    --wails-draggable: drag;
+}

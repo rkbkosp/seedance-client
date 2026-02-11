@@ -7,18 +7,18 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"seedance-client/config"
 	"seedance-client/models"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-const DownloadsDir = "downloads"
-
 // ensureDownloadsDir creates the downloads directory if it doesn't exist
 func ensureDownloadsDir() {
-	if _, err := os.Stat(DownloadsDir); os.IsNotExist(err) {
-		os.MkdirAll(DownloadsDir, 0755)
+	dir := config.DownloadsDir()
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		os.MkdirAll(dir, 0755)
 	}
 }
 
@@ -27,7 +27,7 @@ func DownloadAsset(url string, ext string) (string, error) {
 	ensureDownloadsDir()
 
 	filename := uuid.New().String() + ext
-	localPath := filepath.Join(DownloadsDir, filename)
+	localPath := filepath.Join(config.DownloadsDir(), filename)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -51,7 +51,8 @@ func DownloadAsset(url string, ext string) (string, error) {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
-	return localPath, nil
+	// Return relative path for DB storage
+	return config.ToRelativePath(localPath), nil
 }
 
 // DownloadTakeAssets downloads video and last frame for a take
@@ -64,7 +65,7 @@ func DownloadTakeAssets(take *models.Take) error {
 	if take.DownloadStatus == "completed" {
 		// Verify files exist
 		if take.LocalVideoPath != "" {
-			if _, err := os.Stat(take.LocalVideoPath); err == nil {
+			if _, err := os.Stat(config.ToAbsolutePath(take.LocalVideoPath)); err == nil {
 				return nil // Already downloaded and exists
 			}
 		}
@@ -132,7 +133,7 @@ func ScanAndDownloadMissing() {
 		if take.VideoURL != "" {
 			if take.LocalVideoPath == "" {
 				needsDownload = true
-			} else if _, err := os.Stat(take.LocalVideoPath); os.IsNotExist(err) {
+			} else if _, err := os.Stat(config.ToAbsolutePath(take.LocalVideoPath)); os.IsNotExist(err) {
 				needsDownload = true
 				take.LocalVideoPath = "" // Reset so it gets re-downloaded
 			}
@@ -142,7 +143,7 @@ func ScanAndDownloadMissing() {
 		if take.LastFrameURL != "" {
 			if take.LocalLastFramePath == "" {
 				needsDownload = true
-			} else if _, err := os.Stat(take.LocalLastFramePath); os.IsNotExist(err) {
+			} else if _, err := os.Stat(config.ToAbsolutePath(take.LocalLastFramePath)); os.IsNotExist(err) {
 				needsDownload = true
 				take.LocalLastFramePath = "" // Reset
 			}
@@ -179,7 +180,8 @@ func StartBackgroundDownloader() {
 // GetEffectiveVideoURL returns local path if available, otherwise remote URL
 func GetEffectiveVideoURL(take *models.Take) string {
 	if take.LocalVideoPath != "" {
-		if _, err := os.Stat(take.LocalVideoPath); err == nil {
+		absPath := config.ToAbsolutePath(take.LocalVideoPath)
+		if _, err := os.Stat(absPath); err == nil {
 			return "/" + take.LocalVideoPath
 		}
 	}
@@ -189,7 +191,8 @@ func GetEffectiveVideoURL(take *models.Take) string {
 // GetEffectiveLastFrameURL returns local path if available, otherwise remote URL
 func GetEffectiveLastFrameURL(take *models.Take) string {
 	if take.LocalLastFramePath != "" {
-		if _, err := os.Stat(take.LocalLastFramePath); err == nil {
+		absPath := config.ToAbsolutePath(take.LocalLastFramePath)
+		if _, err := os.Stat(absPath); err == nil {
 			return "/" + take.LocalLastFramePath
 		}
 	}

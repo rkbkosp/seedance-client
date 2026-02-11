@@ -1,18 +1,20 @@
 package models
 
 import (
+	"seedance-client/config"
+
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func InitDB() {
 	var err error
-	DB, err = gorm.Open(sqlite.Open("seedance.db"), &gorm.Config{})
+	DB, err = gorm.Open(sqlite.Open(config.DBPath()), &gorm.Config{})
 	if err != nil {
 		panic("failed to connect database")
 	}
 
-	DB.AutoMigrate(&Project{}, &Storyboard{}, &Take{})
+	DB.AutoMigrate(&Project{}, &Storyboard{}, &Take{}, &Setting{})
 
 	// Migrate existing Storyboard data to Takes
 	// We use raw SQL to avoid needing the old struct definition
