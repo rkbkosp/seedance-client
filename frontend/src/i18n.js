@@ -45,7 +45,19 @@ export const i18nData = {
         "sb.use_as_firstframe": "Use as First Frame",
         "sb.export": "Export Bundle",
         "sb.mode": "Mode",
-        "sb.audio": "Audio"
+        "sb.audio": "Audio",
+
+        "projects.version": "Model Version",
+        "projects.version.v2": "Seedance 2.0",
+        "projects.version.v1": "Seedance 1.5 & earlier",
+
+        "v2.coming_soon": "Seedance 2.0 - Coming Soon",
+        "v2.description": "The Seedance 2.0 workflow and storyboard interface is under development. This page will be updated with new capabilities once the Volcengine Seedance 2.0 API is released.",
+        "v2.expected_features": "Expected Features:",
+        "v2.feature_1": "New generation model with enhanced quality",
+        "v2.feature_2": "Updated workflow and storyboard interface",
+        "v2.feature_3": "New API parameters and capabilities",
+        "v2.feature_4": "Improved video generation options"
     },
     "zh": {
         "app.title": "Spark (火种)",
@@ -93,7 +105,19 @@ export const i18nData = {
         "sb.use_as_firstframe": "用作首帧",
         "sb.export": "导出素材包",
         "sb.mode": "模式",
-        "sb.audio": "音频"
+        "sb.audio": "音频",
+
+        "projects.version": "模型版本",
+        "projects.version.v2": "Seedance 2.0",
+        "projects.version.v1": "Seedance 1.5 及之前版本",
+
+        "v2.coming_soon": "Seedance 2.0 - 即将推出",
+        "v2.description": "Seedance 2.0 的工作流和故事板界面正在开发中。等火山引擎 Seedance 2.0 API 发布后，此页面将更新新功能。",
+        "v2.expected_features": "预期功能：",
+        "v2.feature_1": "新一代高质量生成模型",
+        "v2.feature_2": "全新的工作流和故事板界面",
+        "v2.feature_3": "新的 API 参数和能力",
+        "v2.feature_4": "改进的视频生成选项"
     }
 };
 

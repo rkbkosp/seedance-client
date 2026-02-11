@@ -2,6 +2,7 @@ import './style.css';
 import { applyLanguage, getLanguage, setLanguage } from './i18n.js';
 import { renderProjectsPage } from './projects.js';
 import { renderStoryboardPage } from './storyboard.js';
+import { renderStoryboardV2Page } from './storyboard_v2.js';
 
 // ============================================================
 // Router
@@ -21,7 +22,18 @@ async function navigate() {
     if (!container) return;
 
     if (route.view === 'storyboard') {
-        await renderStoryboardPage(container, route.id);
+        // Fetch project to determine version, then route accordingly
+        try {
+            const data = await window.go.main.App.GetProject(route.id);
+            const version = data.project.model_version || 'v1.x';
+            if (version === 'v2.0') {
+                await renderStoryboardV2Page(container, route.id, data);
+            } else {
+                await renderStoryboardPage(container, route.id);
+            }
+        } catch (err) {
+            container.innerHTML = `<div class="alert alert-error mt-4">Failed to load project: ${err}</div>`;
+        }
     } else {
         await renderProjectsPage(container);
     }

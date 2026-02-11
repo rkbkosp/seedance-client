@@ -33,4 +33,7 @@ func InitDB() {
 		WHERE id NOT IN (SELECT DISTINCT storyboard_id FROM takes)
 		  AND prompt IS NOT NULL AND prompt != '' -- Ensure we don't migrate empty/already migrated rows if columns cleared
 	`)
+
+	// Migrate existing projects without model_version to v1.x
+	DB.Exec(`UPDATE projects SET model_version = ? WHERE model_version IS NULL OR model_version = ''`, ModelVersionV1)
 }

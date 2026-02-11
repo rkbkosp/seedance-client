@@ -19,12 +19,20 @@ function renderHTML(container, data) {
     const projects = data.projects || [];
     const stats = data.stats || {};
 
-    const projectCards = projects.map(p => `
+    const projectCards = projects.map(p => {
+        const versionBadge = p.model_version === 'v2.0'
+            ? '<span class="badge badge-primary badge-xs">2.0</span>'
+            : '<span class="badge badge-ghost badge-xs">1.x</span>';
+
+        return `
         <div class="card card-compact bg-base-100 border border-base-content/10">
             <div class="card-body">
                 <div class="flex justify-between items-start">
-                    <h2 class="card-title text-base truncate">${escapeHtml(p.name)}</h2>
-                    <button data-delete-project="${p.id}" class="btn btn-ghost btn-circle btn-xs text-error">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <h2 class="card-title text-base truncate">${escapeHtml(p.name)}</h2>
+                        ${versionBadge}
+                    </div>
+                    <button data-delete-project="${p.id}" class="btn btn-ghost btn-circle btn-xs text-error flex-shrink-0">
                         <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 -960 960 960" width="16" fill="currentColor">
                             <path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z" />
                         </svg>
@@ -38,7 +46,7 @@ function renderHTML(container, data) {
                 </div>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 
     container.innerHTML = `
         <div class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
@@ -49,6 +57,10 @@ function renderHTML(container, data) {
             <div class="join">
                 <input type="text" id="new-project-name" data-i18n="projects.create.placeholder"
                     placeholder="New Project Name" required class="input input-bordered input-sm join-item w-48">
+                <select id="new-project-version" class="select select-bordered select-sm join-item">
+                    <option value="v2.0">Seedance 2.0</option>
+                    <option value="v1.x">Seedance 1.5 &amp; earlier</option>
+                </select>
                 <button id="create-project-btn" class="btn btn-primary btn-sm join-item gap-1">
                     <span class="text-lg font-bold">+</span> <span data-i18n="projects.create.btn">Create</span>
                 </button>
@@ -97,8 +109,9 @@ function attachEvents(container) {
     createBtn.addEventListener('click', async () => {
         const name = nameInput.value.trim();
         if (!name) return;
+        const version = document.getElementById('new-project-version').value;
         try {
-            await window.go.main.App.CreateProject(name);
+            await window.go.main.App.CreateProject({ name, model_version: version });
             nameInput.value = '';
             await renderProjectsPage(container);
         } catch (err) {

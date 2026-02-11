@@ -123,12 +123,35 @@ func (a *App) GetProjects() (*ProjectsData, error) {
 	}, nil
 }
 
-// CreateProject creates a new project
-func (a *App) CreateProject(name string) error {
-	if name == "" {
+// CreateProjectParams holds parameters for creating a project
+type CreateProjectParams struct {
+	Name         string `json:"name"`
+	ModelVersion string `json:"model_version"` // "v1.x" or "v2.0"
+}
+
+// CreateProject creates a new project with a model version
+func (a *App) CreateProject(params CreateProjectParams) error {
+	if params.Name == "" {
 		return fmt.Errorf("project name is required")
 	}
-	return models.DB.Create(&models.Project{Name: name}).Error
+	if params.ModelVersion == "" {
+		params.ModelVersion = models.ModelVersionV1
+	}
+	if !models.IsValidModelVersion(params.ModelVersion) {
+		return fmt.Errorf("invalid model version: %s", params.ModelVersion)
+	}
+	return models.DB.Create(&models.Project{
+		Name:         params.Name,
+		ModelVersion: params.ModelVersion,
+	}).Error
+}
+
+// GetModelVersions returns the available model versions for project creation
+func (a *App) GetModelVersions() []map[string]string {
+	return []map[string]string{
+		{"value": models.ModelVersionV2, "label": "Seedance 2.0", "description": "Next-gen model (coming soon)"},
+		{"value": models.ModelVersionV1, "label": "Seedance 1.5 & earlier", "description": "Current stable models"},
+	}
 }
 
 // DeleteProject deletes a project by ID
@@ -202,10 +225,11 @@ type StoryboardData struct {
 
 // ProjectDetail is the project with storyboards
 type ProjectDetail struct {
-	ID          uint             `json:"id"`
-	Name        string           `json:"name"`
-	CreatedAt   time.Time        `json:"created_at"`
-	Storyboards []StoryboardData `json:"storyboards"`
+	ID           uint             `json:"id"`
+	Name         string           `json:"name"`
+	ModelVersion string           `json:"model_version"`
+	CreatedAt    time.Time        `json:"created_at"`
+	Storyboards  []StoryboardData `json:"storyboards"`
 }
 
 // ProjectDetailData is the response for the project detail page
@@ -262,12 +286,19 @@ func (a *App) GetProject(id uint) (*ProjectDetailData, error) {
 		storyboards = append(storyboards, sbData)
 	}
 
+	// Determine model version, default to v1.x for backward compatibility
+	modelVersion := project.ModelVersion
+	if modelVersion == "" {
+		modelVersion = models.ModelVersionV1
+	}
+
 	return &ProjectDetailData{
 		Project: ProjectDetail{
-			ID:          project.ID,
-			Name:        project.Name,
-			CreatedAt:   project.CreatedAt,
-			Storyboards: storyboards,
+			ID:           project.ID,
+			Name:         project.Name,
+			ModelVersion: modelVersion,
+			CreatedAt:    project.CreatedAt,
+			Storyboards:  storyboards,
 		},
 		Models:               config.GetModels(),
 		AudioSupportedModels: config.GetAudioSupportedModelIDs(),

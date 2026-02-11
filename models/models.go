@@ -6,11 +6,33 @@ import (
 	"gorm.io/gorm"
 )
 
+// Model version constants
+const (
+	ModelVersionV1 = "v1.x" // Seedance 1.0/1.5 and earlier
+	ModelVersionV2 = "v2.0" // Seedance 2.0
+)
+
+// ValidModelVersions returns the list of valid model versions
+func ValidModelVersions() []string {
+	return []string{ModelVersionV1, ModelVersionV2}
+}
+
+// IsValidModelVersion checks if a model version string is valid
+func IsValidModelVersion(v string) bool {
+	for _, valid := range ValidModelVersions() {
+		if v == valid {
+			return true
+		}
+	}
+	return false
+}
+
 type Project struct {
-	ID          uint         `gorm:"primaryKey" json:"id"`
-	Name        string       `json:"name"`
-	CreatedAt   time.Time    `json:"created_at"`
-	Storyboards []Storyboard `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE;" json:"storyboards"`
+	ID           uint         `gorm:"primaryKey" json:"id"`
+	Name         string       `json:"name"`
+	ModelVersion string       `gorm:"default:v1.x" json:"model_version"` // "v1.x" or "v2.0"
+	CreatedAt    time.Time    `json:"created_at"`
+	Storyboards  []Storyboard `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE;" json:"storyboards"`
 }
 
 type Storyboard struct {
