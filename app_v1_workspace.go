@@ -152,6 +152,11 @@ type UpdateShotParams struct {
 	DurationFine      int         `json:"duration_fine"`
 }
 
+type CreateV1ShotParams struct {
+	ProjectID        uint `json:"project_id"`
+	AfterStoryboardID uint `json:"after_storyboard_id"`
+}
+
 type SplitShotParams struct {
 	StoryboardID  uint   `json:"storyboard_id"`
 	FirstContent  string `json:"first_content"`
@@ -546,6 +551,107 @@ func (a *App) DecomposeStoryboardWithLLM(params DecomposeStoryboardParams) (*V1W
 // ============================================================
 // Shot Operations
 // ============================================================
+
+func (a *App) CreateV1Shot(params CreateV1ShotParams) (uint, error) {
+	if params.ProjectID == 0 {
+		return 0, fmt.Errorf("project_id is required")
+	}
+
+	var project models.Project
+	if err := models.DB.First(&project, params.ProjectID).Error; err != nil {
+		return 0, fmt.Errorf("project not found")
+	}
+
+	ratio := strings.TrimSpace(project.AspectRatio)
+	if ratio == "" {
+		ratio = "16:9"
+	}
+
+	defaultModel := config.GetDefaultModel()
+	defaultModelID := ""
+	if defaultModel != nil {
+		defaultModelID = strings.TrimSpace(defaultModel.ID)
+	}
+	if defaultModelID == "" {
+		defaultModelID = "doubao-seedance-1-5-pro-251215"
+	}
+
+	tx := models.DB.Begin()
+	if tx.Error != nil {
+		return 0, tx.Error
+	}
+
+	insertOrder := 1
+	if params.AfterStoryboardID > 0 {
+		var after models.Storyboard
+		if err := tx.Where("id = ? AND project_id = ?", params.AfterStoryboardID, params.ProjectID).First(&after).Error; err != nil {
+			tx.Rollback()
+			if err == gorm.ErrRecordNotFound {
+				return 0, fmt.Errorf("reference shot not found")
+			}
+			return 0, err
+		}
+
+		insertOrder = after.ShotOrder + 1
+		if err := tx.Model(&models.Storyboard{}).
+			Where("project_id = ? AND shot_order >= ?", params.ProjectID, insertOrder).
+			Update("shot_order", gorm.Expr("shot_order + 1")).Error; err != nil {
+			tx.Rollback()
+			return 0, err
+		}
+	} else {
+		var maxOrder int
+		if err := tx.Model(&models.Storyboard{}).
+			Where("project_id = ?", params.ProjectID).
+			Select("COALESCE(MAX(shot_order),0)").
+			Scan(&maxOrder).Error; err != nil {
+			tx.Rollback()
+			return 0, err
+		}
+		insertOrder = maxOrder + 1
+	}
+
+	now := time.Now()
+	sb := models.Storyboard{
+		ProjectID:         params.ProjectID,
+		ShotOrder:         insertOrder,
+		EstimatedDuration: 5,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if err := tx.Create(&sb).Error; err != nil {
+		tx.Rollback()
+		return 0, err
+	}
+
+	initialPrompt := composeShotPrompt(sb.FrameContent, nil, nil, nil, nil, sb.SoundDesign)
+	take := models.Take{
+		StoryboardID:   sb.ID,
+		Prompt:         initialPrompt,
+		ModelID:        defaultModelID,
+		Ratio:          ratio,
+		Duration:       normalizeDuration(sb.EstimatedDuration),
+		GenerateAudio:  false,
+		ServiceTier:    "standard",
+		GenerationMode: "standard",
+		Status:         "Draft",
+		CreatedAt:      now,
+	}
+	if err := tx.Create(&take).Error; err != nil {
+		tx.Rollback()
+		return 0, err
+	}
+
+	if err := resequenceStoryboardsTx(tx, params.ProjectID); err != nil {
+		tx.Rollback()
+		return 0, err
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return 0, err
+	}
+	return sb.ID, nil
+}
 
 func (a *App) UpdateShotMetadata(params UpdateShotParams) error {
 	var sb models.Storyboard
