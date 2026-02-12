@@ -11,7 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"seedance-client/config"
 	"seedance-client/models"
+	"sort"
 	"strings"
 )
 
@@ -90,6 +92,7 @@ type AssetClip struct {
 // ExportData holds information about files to be included in the export
 type ExportData struct {
 	Filename string
+	// VideoURL may be a remote URL (http/https) or a local path (absolute or relative to data dir).
 	VideoURL string
 	Duration int
 }
@@ -202,36 +205,116 @@ func PrepareExportData(storyboards []models.Storyboard) []ExportData {
 	var exports []ExportData
 	index := 1
 
-	for _, sb := range storyboards {
-		// Find best take
-		var bestTake *models.Take
-		for i := len(sb.Takes) - 1; i >= 0; i-- {
-			if sb.Takes[i].IsGood {
-				bestTake = &sb.Takes[i]
-				break
+	ordered := make([]models.Storyboard, 0, len(storyboards))
+	ordered = append(ordered, storyboards...)
+	// Ensure timeline order follows storyboard order.
+	// Prefer ShotOrder when set; otherwise keep a stable fallback by ID.
+	sort.SliceStable(ordered, func(i, j int) bool {
+		a, b := ordered[i], ordered[j]
+		aOrder, bOrder := a.ShotOrder, b.ShotOrder
+		if aOrder > 0 && bOrder > 0 {
+			return aOrder < bOrder
+		}
+		if aOrder > 0 {
+			return true
+		}
+		if bOrder > 0 {
+			return false
+		}
+		return a.ID < b.ID
+	})
+
+	for _, sb := range ordered {
+		// Each storyboard exports exactly one material:
+		// 1) latest succeeded GoodTake with a resolvable source
+		// 2) otherwise latest succeeded take with a resolvable source
+		var latestGood *models.Take
+		var latestAny *models.Take
+
+		better := func(a, b *models.Take) bool {
+			if b == nil {
+				return true
+			}
+			if a.CreatedAt.After(b.CreatedAt) {
+				return true
+			}
+			if a.CreatedAt.Equal(b.CreatedAt) && a.ID > b.ID {
+				return true
+			}
+			return false
+		}
+
+		for i := range sb.Takes {
+			take := &sb.Takes[i]
+			if take.Status != "Succeeded" {
+				continue
+			}
+
+			videoSource := ""
+			if take.LocalVideoPath != "" {
+				abs := config.ToAbsolutePath(take.LocalVideoPath)
+				if _, err := os.Stat(abs); err == nil {
+					videoSource = abs
+				}
+			}
+			if videoSource == "" {
+				videoSource = strings.TrimSpace(take.VideoURL)
+			}
+			if videoSource == "" {
+				continue
+			}
+
+			// Keep the chosen take pointers only; source is re-derived below to avoid duplication.
+			if take.IsGood {
+				if better(take, latestGood) {
+					latestGood = take
+				}
+			}
+			if better(take, latestAny) {
+				latestAny = take
 			}
 		}
-		if bestTake == nil && len(sb.Takes) > 0 {
-			bestTake = &sb.Takes[len(sb.Takes)-1]
-		}
 
-		if bestTake == nil {
+		chosen := latestGood
+		if chosen == nil {
+			chosen = latestAny
+		}
+		if chosen == nil {
 			continue
 		}
 
-		// Only include succeeded storyboards with valid video URLs
-		if bestTake.Status != "Succeeded" || bestTake.VideoURL == "" {
+		videoSource := ""
+		if chosen.LocalVideoPath != "" {
+			abs := config.ToAbsolutePath(chosen.LocalVideoPath)
+			if _, err := os.Stat(abs); err == nil {
+				videoSource = abs
+			}
+		}
+		if videoSource == "" {
+			videoSource = strings.TrimSpace(chosen.VideoURL)
+		}
+		if videoSource == "" {
 			continue
 		}
 
-		// Create filename: {index}_{sanitized_prompt}.mp4
-		sanitized := sanitizeFilename(bestTake.Prompt)
-		filename := fmt.Sprintf("%03d_%s.mp4", index, sanitized)
+		// Create filename: {index}_{shotNo?}_{sanitized_prompt}.mp4
+		promptPart := sanitizeFilename(chosen.Prompt)
+		shotNoRaw := strings.TrimSpace(sb.ShotNo)
+		shotPart := ""
+		if shotNoRaw != "" {
+			shotPart = sanitizeFilename(shotNoRaw)
+		}
+		var filename string
+		if shotPart != "" {
+			filename = fmt.Sprintf("%03d_%s_%s.mp4", index, shotPart, promptPart)
+		} else {
+			filename = fmt.Sprintf("%03d_%s.mp4", index, promptPart)
+		}
 
 		exports = append(exports, ExportData{
 			Filename: filename,
-			VideoURL: bestTake.VideoURL,
-			Duration: bestTake.Duration,
+			VideoURL: videoSource,
+			Duration: chosen.Duration,
 		})
 		index++
 	}
@@ -250,18 +333,31 @@ func CreateExportZIP(w io.Writer, projectName string, exports []ExportData) erro
 
 	// Inspect the first video to get properties if available
 	if len(exports) > 0 {
-		tempFile, err := os.CreateTemp("", "scan_video_*.mp4")
-		if err == nil {
-			defer os.Remove(tempFile.Name()) // Clean up
-			defer tempFile.Close()
+		firstSrc := strings.TrimSpace(exports[0].VideoURL)
+		if isHTTPURL(firstSrc) {
+			tempFile, err := os.CreateTemp("", "scan_video_*.mp4")
+			if err == nil {
+				defer os.Remove(tempFile.Name()) // Clean up
+				defer tempFile.Close()
 
-			// Download first video header (or full file if small)
-			// For simplicity and correctness, downloading full file to temp is safest to ensure we can seek if needed.
-			// Since videos are short, this is acceptable overhead.
-			if err := DownloadVideo(exports[0].VideoURL, tempFile.Name()); err == nil {
-				// Re-open for reading
-				f, err := os.Open(tempFile.Name())
-				if err == nil {
+				// Download full file to temp so we can seek.
+				if err := DownloadVideo(firstSrc, tempFile.Name()); err == nil {
+					f, err := os.Open(tempFile.Name())
+					if err == nil {
+						defer f.Close()
+						w, h, fd, err := GetVideoProperties(f)
+						if err == nil {
+							width = w
+							height = h
+							frameDuration = fd
+						}
+					}
+				}
+			}
+		} else {
+			abs := resolveLocalPath(firstSrc)
+			if abs != "" {
+				if f, err := os.Open(abs); err == nil {
 					defer f.Close()
 					w, h, fd, err := GetVideoProperties(f)
 					if err == nil {
@@ -288,7 +384,7 @@ func CreateExportZIP(w io.Writer, projectName string, exports []ExportData) erro
 		return fmt.Errorf("failed to write fcpxml: %w", err)
 	}
 
-	// Download and add each video
+	// Add each video (remote download or local file copy)
 	client := &http.Client{}
 	for _, exp := range exports {
 		if err := addVideoToZip(zipWriter, client, exp.Filename, exp.VideoURL); err != nil {
@@ -509,25 +605,63 @@ func GetVideoProperties(r io.ReadSeeker) (int, int, string, error) {
 
 // addVideoToZip downloads a video and adds it to the ZIP
 func addVideoToZip(zw *zip.Writer, client *http.Client, filename, url string) error {
-	resp, err := client.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download video: status %d", resp.StatusCode)
-	}
-
-	// Create file in zip
+	src := strings.TrimSpace(url)
 	videoFile, err := zw.Create(filename)
 	if err != nil {
 		return err
 	}
 
-	// Stream video content to zip
-	_, err = io.Copy(videoFile, resp.Body)
+	if isHTTPURL(src) {
+		resp, err := client.Get(src)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("failed to download video: status %d", resp.StatusCode)
+		}
+		_, err = io.Copy(videoFile, resp.Body)
+		return err
+	}
+
+	abs := resolveLocalPath(src)
+	if abs == "" {
+		return fmt.Errorf("invalid local video source: %q", src)
+	}
+	file, err := os.Open(abs)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = io.Copy(videoFile, file)
 	return err
+}
+
+func isHTTPURL(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+// resolveLocalPath converts a potentially relative/served path into an absolute filesystem path.
+// Accepts:
+// - absolute paths (/Users/...)
+// - data-dir relative paths (downloads/xxx.mp4)
+// - served paths (/downloads/xxx.mp4)
+func resolveLocalPath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	// If it looks like a URL path (e.g. /downloads/xxx.mp4), treat it as data-dir relative.
+	if strings.HasPrefix(p, "/downloads/") || strings.HasPrefix(p, "/uploads/") {
+		p = strings.TrimPrefix(p, "/")
+	}
+	abs := config.ToAbsolutePath(p)
+	if _, err := os.Stat(abs); err == nil {
+		return abs
+	}
+	return ""
 }
 
 // ExportProjectToZip is a convenience function that handles the full export process
