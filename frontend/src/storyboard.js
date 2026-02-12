@@ -205,7 +205,7 @@ function renderBreakdownPanel() {
     const shots = ws.storyboards || [];
 
     const shotCards = shots.length === 0
-        ? '<div class="cinema-empty">当前还没有分镜，请先在左侧导入并拆解。</div>'
+        ? '<div class="cinema-empty">当前还没有分镜，请先在左侧导入并拆解，或点击右上角新建空白分镜。</div>'
         : shots.map((shot, index) => renderShotCard(shot, index)).join('');
 
     return `
@@ -257,7 +257,10 @@ function renderBreakdownPanel() {
             </section>
 
             <section class="breakdown-shots card-cinema">
-                <div class="card-head">分镜编辑（可手动调整/拆分/合并/删除）</div>
+                <div class="card-head">
+                    分镜编辑（可手动调整/拆分/合并/删除）
+                    <button class="mini-btn" data-create-new-shot style="float:right;">+ 新建分镜</button>
+                </div>
                 <div class="card-body shot-scroll">
                     ${shotCards}
                 </div>
@@ -443,7 +446,14 @@ function renderWorkbenchPanel() {
     const ws = state.workspace;
     const shots = ws.storyboards || [];
     if (shots.length === 0) {
-        return '<div class="card-cinema"><div class="card-body cinema-empty">暂无分镜，先去“分镜拆解”导入并生成。</div></div>';
+        return `
+            <div class="card-cinema">
+                <div class="card-body cinema-empty">
+                    暂无分镜，先去"分镜拆解"导入并生成，或
+                    <button class="mini-btn" data-create-new-shot style="margin-left:8px;">+ 新建分镜</button>
+                </div>
+            </div>
+        `;
     }
 
     const selectedShot = getSelectedShot();
@@ -452,7 +462,10 @@ function renderWorkbenchPanel() {
     return `
         <div class="workbench-shell">
             <aside class="wb-left card-cinema">
-                <div class="card-head">分镜列表 / Take 切换</div>
+                <div class="card-head">
+                    分镜列表 / Take 切换
+                    <button class="mini-btn" data-create-new-shot style="float:right;font-size:11px;">+ 新建</button>
+                </div>
                 <div class="card-body wb-scroll">
                     ${(shots || []).map((shot, idx) => renderWorkbenchShotItem(shot, idx)).join('')}
                 </div>
@@ -879,6 +892,22 @@ function attachBreakdownEvents() {
                 renderPage();
             } catch (err) {
                 alert('拆分失败: ' + err);
+            }
+        });
+    });
+
+    rootContainer.querySelectorAll('[data-create-new-shot]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            try {
+                const newShotId = await window.go.main.App.CreateV1Shot({
+                    project_id: state.projectId,
+                    after_storyboard_id: 0,
+                });
+                await loadWorkspace({ preserveSelection: true });
+                state.selectedShotId = newShotId;
+                renderPage();
+            } catch (err) {
+                alert('新建分镜失败: ' + err);
             }
         });
     });

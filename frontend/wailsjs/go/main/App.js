@@ -14,6 +14,10 @@ export function CreateStoryboard(arg1) {
   return window['go']['main']['App']['CreateStoryboard'](arg1);
 }
 
+export function CreateV1Shot(arg1) {
+  return window['go']['main']['App']['CreateV1Shot'](arg1);
+}
+
 export function DecomposeStoryboardWithLLM(arg1) {
   return window['go']['main']['App']['DecomposeStoryboardWithLLM'](arg1);
 }

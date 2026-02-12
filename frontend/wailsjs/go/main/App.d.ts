@@ -8,6 +8,8 @@ export function CreateProject(arg1:main.CreateProjectParams):Promise<void>;
 
 export function CreateStoryboard(arg1:main.CreateStoryboardParams):Promise<void>;
 
+export function CreateV1Shot(arg1:main.CreateV1ShotParams):Promise<number>;
+
 export function DecomposeStoryboardWithLLM(arg1:main.DecomposeStoryboardParams):Promise<main.V1WorkspaceData>;
 
 export function DeleteProject(arg1:number):Promise<void>;

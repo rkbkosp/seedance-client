@@ -212,6 +212,20 @@ export namespace main {
 	        this.generation_mode = source["generation_mode"];
 	    }
 	}
+	export class CreateV1ShotParams {
+	    project_id: number;
+	    after_storyboard_id: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateV1ShotParams(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.project_id = source["project_id"];
+	        this.after_storyboard_id = source["after_storyboard_id"];
+	    }
+	}
 	export class DecomposeStoryboardParams {
 	    project_id: number;
 	    source_text: string;
