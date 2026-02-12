@@ -1,4 +1,5 @@
 import { applyLanguage } from './i18n.js';
+import { formatError, reportError, reportErrorOnce } from './errors.js';
 
 const PANELS = {
     breakdown: 'breakdown',
@@ -27,6 +28,25 @@ let state = {
 let rootContainer = null;
 let pollTimer = null;
 let isLoadingWorkspace = false;
+let loadWorkspaceInFlight = null;
+
+async function ensureHasGlobalAPIKey() {
+    try {
+        const ok = await window.go.main.App.HasAPIKey();
+        if (ok) return true;
+    } catch (e) {
+        // If check fails, fall back to letting the backend return an explicit error.
+        return true;
+    }
+
+    reportError('未配置 API Key', '[E_APIKEY_MISSING] 未配置 API Key：请点击右上角【设置】填写 API Key 后再重试。');
+    const dialog = document.getElementById('settings-dialog');
+    if (dialog && typeof dialog.showModal === 'function') {
+        dialog.showModal();
+        setTimeout(() => document.getElementById('apikey-input')?.focus(), 50);
+    }
+    return false;
+}
 
 export async function renderStoryboardPage(container, projectId) {
     rootContainer = container;
@@ -46,14 +66,21 @@ export async function renderStoryboardPage(container, projectId) {
         replaceExisting: true,
     };
 
-    await loadWorkspace({ preserveSelection: false });
-    renderPage();
+    try {
+        await loadWorkspace({ preserveSelection: false });
+        renderPage();
+    } catch (err) {
+        container.innerHTML = `<div class="alert alert-error mt-4">加载工作台失败：${formatError(err)}</div>`;
+    }
 }
 
 async function loadWorkspace({ preserveSelection = true } = {}) {
-    if (isLoadingWorkspace) return;
+    if (loadWorkspaceInFlight) {
+        return loadWorkspaceInFlight;
+    }
+
     isLoadingWorkspace = true;
-    try {
+    loadWorkspaceInFlight = (async () => {
         const prevShotId = preserveSelection ? state.selectedShotId : null;
         const prevTakeByShot = preserveSelection ? { ...state.selectedTakeByShot } : {};
 
@@ -79,8 +106,13 @@ async function loadWorkspace({ preserveSelection = true } = {}) {
         }
 
         syncPolling();
+    })();
+
+    try {
+        return await loadWorkspaceInFlight;
     } finally {
         isLoadingWorkspace = false;
+        loadWorkspaceInFlight = null;
     }
 }
 
@@ -103,9 +135,24 @@ function syncPolling() {
                 return;
             }
 
-            await Promise.all(ids.map(id => window.go.main.App.GetTakeStatus(id).catch(() => null)));
-            await loadWorkspace({ preserveSelection: true });
-            renderPage();
+            await Promise.all(ids.map(async (id) => {
+                try {
+                    await window.go.main.App.GetTakeStatus(id);
+                } catch (err) {
+                    console.warn('[poll] GetTakeStatus failed', id, err);
+                    // Avoid alert spam while polling: show at most once per minute per error type.
+                    reportErrorOnce('状态更新失败', err, {
+                        ttlMs: 60000,
+                    });
+                }
+            }));
+
+            try {
+                await loadWorkspace({ preserveSelection: true });
+                renderPage();
+            } catch (err) {
+                console.warn('[poll] refresh failed', err);
+            }
         }, 3500);
     }
 }
@@ -675,7 +722,7 @@ function attachCommonEvents() {
             try {
                 await window.go.main.App.ExportProject(state.projectId);
             } catch (err) {
-                if (err) alert('导出失败: ' + err);
+                if (err) reportError('导出失败', err);
             }
         });
     });
@@ -763,7 +810,7 @@ function attachBreakdownEvents() {
             state.decomposeText = result.content;
             renderPage();
         } catch (err) {
-            alert('导入失败: ' + err);
+            reportError('导入失败', err);
         }
     });
 
@@ -772,6 +819,22 @@ function attachBreakdownEvents() {
         if (!sourceText) {
             alert('请先输入分镜文案或导入文件');
             return;
+        }
+
+        if ((state.llmProvider || 'ark_default') === 'ark_default') {
+            const ok = await ensureHasGlobalAPIKey();
+            if (!ok) return;
+        } else if ((state.llmProvider || '') === 'ark_custom' || (state.llmProvider || '') === 'openai_compatible') {
+            if (!(state.llmApiKey || '').trim()) {
+                alert('请先填写“API Key（仅用于本次分镜拆解）”');
+                document.getElementById('llm-api-key-input')?.focus();
+                return;
+            }
+            if ((state.llmProvider || '') === 'openai_compatible' && !(state.llmBaseURL || '').trim()) {
+                alert('OpenAI Compatible 模式需要填写 Base URL');
+                document.getElementById('llm-base-url-input')?.focus();
+                return;
+            }
         }
 
         try {
@@ -787,7 +850,7 @@ function attachBreakdownEvents() {
             await loadWorkspace({ preserveSelection: false });
             renderPage();
         } catch (err) {
-            alert('拆解失败: ' + err);
+            reportError('拆解失败', err);
         }
     });
 
@@ -845,7 +908,7 @@ function attachBreakdownEvents() {
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('保存失败: ' + err);
+                reportError('保存失败', err);
             }
         });
     });
@@ -859,7 +922,7 @@ function attachBreakdownEvents() {
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('删除失败: ' + err);
+                reportError('删除失败', err);
             }
         });
     });
@@ -872,7 +935,7 @@ function attachBreakdownEvents() {
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('合并失败: ' + err);
+                reportError('合并失败', err);
             }
         });
     });
@@ -891,7 +954,7 @@ function attachBreakdownEvents() {
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('拆分失败: ' + err);
+                reportError('拆分失败', err);
             }
         });
     });
@@ -907,7 +970,7 @@ function attachBreakdownEvents() {
                 state.selectedShotId = newShotId;
                 renderPage();
             } catch (err) {
-                alert('新建分镜失败: ' + err);
+                reportError('新建分镜失败', err);
             }
         });
     });
@@ -935,7 +998,7 @@ function attachAssetEvents() {
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('保存资产失败: ' + err);
+                reportError('保存资产失败', err);
             }
         });
     });
@@ -948,7 +1011,7 @@ function attachAssetEvents() {
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('上传失败: ' + err);
+                reportError('上传失败', err);
             }
         });
     });
@@ -960,6 +1023,10 @@ function attachAssetEvents() {
             if (!row) return;
             const prompt = row.querySelector('[data-asset-prompt]')?.value || '';
             const inputImages = parseMultilineList(row.querySelector('[data-asset-input-images]')?.value || '');
+
+            const ok = await ensureHasGlobalAPIKey();
+            if (!ok) return;
+
             try {
                 await window.go.main.App.GenerateAssetImage({
                     catalog_id: id,
@@ -970,7 +1037,7 @@ function attachAssetEvents() {
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('生成失败: ' + err);
+                reportError('生成失败', err);
             }
         });
     });
@@ -983,7 +1050,7 @@ function attachAssetEvents() {
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('设置 Good 失败: ' + err);
+                reportError('设置 Good 失败', err);
             }
         });
     });
@@ -998,7 +1065,7 @@ function attachAssetEvents() {
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('上传帧失败: ' + err);
+                reportError('上传帧失败', err);
             }
         });
     });
@@ -1013,6 +1080,9 @@ function attachAssetEvents() {
             const prompt = col.querySelector('[data-frame-prompt]')?.value || '';
             const inputImages = parseMultilineList(col.querySelector('[data-frame-input-images]')?.value || '');
 
+            const ok = await ensureHasGlobalAPIKey();
+            if (!ok) return;
+
             try {
                 await window.go.main.App.GenerateShotFrame({
                     storyboard_id: shotId,
@@ -1024,7 +1094,7 @@ function attachAssetEvents() {
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('生成帧失败: ' + err);
+                reportError('生成帧失败', err);
             }
         });
     });
@@ -1036,7 +1106,7 @@ function attachAssetEvents() {
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('设置帧 Good 失败: ' + err);
+                reportError('设置帧 Good 失败', err);
             }
         });
     });
@@ -1078,7 +1148,7 @@ function attachWorkbenchEvents() {
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('标记 Good Take 失败: ' + err);
+                reportError('标记 Good Take 失败', err);
             }
         });
     });
@@ -1086,12 +1156,20 @@ function attachWorkbenchEvents() {
     rootContainer.querySelectorAll('[data-generate-take]').forEach(btn => {
         btn.addEventListener('click', async () => {
             const takeId = Number(btn.dataset.generateTake);
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '提交中...';
             try {
+                const ok = await ensureHasGlobalAPIKey();
+                if (!ok) return;
                 await window.go.main.App.GenerateTakeVideo(takeId);
                 await loadWorkspace({ preserveSelection: true });
                 renderPage();
             } catch (err) {
-                alert('生成失败: ' + err);
+                reportError('生成失败', err);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
             }
         });
     });
@@ -1140,7 +1218,7 @@ function attachWorkbenchEvents() {
                 }
                 renderPage();
             } catch (err) {
-                alert('保存新 Take 失败: ' + err);
+                reportError('保存新 Take 失败', err);
             }
         });
     });

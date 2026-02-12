@@ -1,4 +1,5 @@
 import { applyLanguage } from './i18n.js';
+import { formatError, reportError } from './errors.js';
 
 // ============================================================
 // Projects Page
@@ -11,7 +12,7 @@ export async function renderProjectsPage(container) {
         attachEvents(container);
         applyLanguage();
     } catch (err) {
-        container.innerHTML = `<div class="alert alert-error mt-4">Failed to load projects: ${escapeHtml(String(err))}</div>`;
+        container.innerHTML = `<div class="alert alert-error mt-4">加载项目列表失败：${escapeHtml(formatError(err))}</div>`;
     }
 }
 
@@ -124,7 +125,7 @@ function attachEvents(container) {
             nameInput.value = '';
             await renderProjectsPage(container);
         } catch (err) {
-            alert('Failed to create project: ' + err);
+            reportError('创建项目失败', err);
         }
     });
 
@@ -141,7 +142,7 @@ function attachEvents(container) {
                 await window.go.main.App.DeleteProject(id);
                 await renderProjectsPage(container);
             } catch (err) {
-                alert('Failed to delete project: ' + err);
+                reportError('删除项目失败', err);
             }
         });
     });

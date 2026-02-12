@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -153,7 +154,7 @@ type UpdateShotParams struct {
 }
 
 type CreateV1ShotParams struct {
-	ProjectID        uint `json:"project_id"`
+	ProjectID         uint `json:"project_id"`
 	AfterStoryboardID uint `json:"after_storyboard_id"`
 }
 
@@ -654,9 +655,15 @@ func (a *App) CreateV1Shot(params CreateV1ShotParams) (uint, error) {
 }
 
 func (a *App) UpdateShotMetadata(params UpdateShotParams) error {
+	if params.StoryboardID == 0 {
+		return fmt.Errorf("storyboard_id 不能为空")
+	}
 	var sb models.Storyboard
 	if err := models.DB.First(&sb, params.StoryboardID).Error; err != nil {
-		return fmt.Errorf("shot not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("分镜不存在")
+		}
+		return fmt.Errorf("加载分镜失败：%w", err)
 	}
 
 	charRefs := normalizeRefs("character", params.Characters, sb.ShotOrder)
@@ -684,66 +691,87 @@ func (a *App) UpdateShotMetadata(params UpdateShotParams) error {
 
 	tx := models.DB.Begin()
 	if tx.Error != nil {
-		return tx.Error
+		return fmt.Errorf("数据库事务启动失败：%w", tx.Error)
 	}
 
 	if err := tx.Save(&sb).Error; err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("保存分镜失败：%w", err)
 	}
 	if err := syncCatalogRefsTx(tx, sb.ProjectID, sb.ID, "character", charRefs); err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("同步角色资产引用失败：%w", err)
 	}
 	if err := syncCatalogRefsTx(tx, sb.ProjectID, sb.ID, "scene", sceneRefs); err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("同步场景资产引用失败：%w", err)
 	}
 	if err := syncCatalogRefsTx(tx, sb.ProjectID, sb.ID, "element", elementRefs); err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("同步元素资产引用失败：%w", err)
 	}
 	if err := syncCatalogRefsTx(tx, sb.ProjectID, sb.ID, "style", styleRefs); err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("同步风格资产引用失败：%w", err)
 	}
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("提交保存失败：%w", err)
+	}
+	return nil
 }
 
 func (a *App) DeleteV1Shot(storyboardID uint) error {
+	if storyboardID == 0 {
+		return fmt.Errorf("storyboard_id 不能为空")
+	}
 	var sb models.Storyboard
 	if err := models.DB.First(&sb, storyboardID).Error; err != nil {
-		return fmt.Errorf("shot not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("分镜不存在")
+		}
+		return fmt.Errorf("加载分镜失败：%w", err)
 	}
 
 	tx := models.DB.Begin()
 	if tx.Error != nil {
-		return tx.Error
+		return fmt.Errorf("数据库事务启动失败：%w", tx.Error)
 	}
 	if err := tx.Where("storyboard_id = ?", storyboardID).Delete(&models.ShotFrameVersion{}).Error; err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("删除分镜首尾帧版本失败：%w", err)
 	}
 	if err := tx.Delete(&models.Storyboard{}, storyboardID).Error; err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("删除分镜失败：%w", err)
 	}
 	if err := resequenceStoryboardsTx(tx, sb.ProjectID); err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("重排分镜顺序失败：%w", err)
 	}
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("提交删除失败：%w", err)
+	}
+	return nil
 }
 
 func (a *App) MergeShotWithNext(storyboardID uint) error {
+	if storyboardID == 0 {
+		return fmt.Errorf("storyboard_id 不能为空")
+	}
 	var current models.Storyboard
 	if err := models.DB.First(&current, storyboardID).Error; err != nil {
-		return fmt.Errorf("shot not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("分镜不存在")
+		}
+		return fmt.Errorf("加载分镜失败：%w", err)
 	}
 
 	var next models.Storyboard
 	if err := models.DB.Where("project_id = ? AND shot_order > ?", current.ProjectID, current.ShotOrder).Order("shot_order asc, id asc").First(&next).Error; err != nil {
-		return fmt.Errorf("no next shot to merge")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("没有下一镜可合并")
+		}
+		return fmt.Errorf("查询下一镜失败：%w", err)
 	}
 
 	mergedChars := mergeRefs(parseEntityRefs(current.CharactersJSON), parseEntityRefs(next.CharactersJSON))
@@ -775,39 +803,48 @@ func (a *App) MergeShotWithNext(storyboardID uint) error {
 
 	tx := models.DB.Begin()
 	if tx.Error != nil {
-		return tx.Error
+		return fmt.Errorf("数据库事务启动失败：%w", tx.Error)
 	}
 	if err := tx.Save(&current).Error; err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("保存合并结果失败：%w", err)
 	}
 	if err := tx.Where("storyboard_id = ?", next.ID).Delete(&models.ShotFrameVersion{}).Error; err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("删除被合并分镜的首尾帧版本失败：%w", err)
 	}
 	if err := tx.Delete(&models.Storyboard{}, next.ID).Error; err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("删除被合并分镜失败：%w", err)
 	}
 	if err := resequenceStoryboardsTx(tx, current.ProjectID); err != nil {
 		tx.Rollback()
-		return err
+		return fmt.Errorf("重排分镜顺序失败：%w", err)
 	}
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("提交合并失败：%w", err)
+	}
+	return nil
 }
 
 func (a *App) SplitShot(params SplitShotParams) (uint, error) {
+	if params.StoryboardID == 0 {
+		return 0, fmt.Errorf("storyboard_id 不能为空")
+	}
 	var sb models.Storyboard
 	if err := models.DB.Preload("Takes", func(db *gorm.DB) *gorm.DB {
 		return db.Order("created_at asc")
 	}).First(&sb, params.StoryboardID).Error; err != nil {
-		return 0, fmt.Errorf("shot not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, fmt.Errorf("分镜不存在")
+		}
+		return 0, fmt.Errorf("加载分镜失败：%w", err)
 	}
 
 	firstContent := strings.TrimSpace(params.FirstContent)
 	secondContent := strings.TrimSpace(params.SecondContent)
 	if firstContent == "" && secondContent == "" {
-		return 0, fmt.Errorf("split content cannot both be empty")
+		return 0, fmt.Errorf("拆分内容不能同时为空")
 	}
 	if firstContent == "" {
 		firstContent = autoSplitFirstPart(sb.FrameContent)
@@ -816,26 +853,26 @@ func (a *App) SplitShot(params SplitShotParams) (uint, error) {
 		secondContent = autoSplitSecondPart(sb.FrameContent)
 	}
 	if strings.TrimSpace(secondContent) == "" {
-		return 0, fmt.Errorf("second shot content is empty")
+		return 0, fmt.Errorf("第二镜内容为空")
 	}
 
 	tx := models.DB.Begin()
 	if tx.Error != nil {
-		return 0, tx.Error
+		return 0, fmt.Errorf("数据库事务启动失败：%w", tx.Error)
 	}
 
 	if err := tx.Model(&models.Storyboard{}).
 		Where("project_id = ? AND shot_order > ?", sb.ProjectID, sb.ShotOrder).
 		Update("shot_order", gorm.Expr("shot_order + 1")).Error; err != nil {
 		tx.Rollback()
-		return 0, err
+		return 0, fmt.Errorf("更新分镜顺序失败：%w", err)
 	}
 
 	sb.FrameContent = firstContent
 	sb.UpdatedAt = time.Now()
 	if err := tx.Save(&sb).Error; err != nil {
 		tx.Rollback()
-		return 0, err
+		return 0, fmt.Errorf("保存第一镜失败：%w", err)
 	}
 
 	newSB := models.Storyboard{
@@ -857,7 +894,7 @@ func (a *App) SplitShot(params SplitShotParams) (uint, error) {
 	}
 	if err := tx.Create(&newSB).Error; err != nil {
 		tx.Rollback()
-		return 0, err
+		return 0, fmt.Errorf("创建第二镜失败：%w", err)
 	}
 
 	var project models.Project
@@ -1413,7 +1450,7 @@ func syncCatalogRefsTx(tx *gorm.DB, projectID uint, storyboardID uint, assetType
 			}
 			continue
 		}
-		if err != nil && err != gorm.ErrRecordNotFound {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		sourceID := storyboardID
@@ -1531,6 +1568,10 @@ func nextShotFrameVersionNo(storyboardID uint, frameType string) int {
 }
 
 func (a *App) generateImageToLocal(modelID string, prompt string, inputImages []string) (string, error) {
+	if !a.HasAPIKey() {
+		return "", fmt.Errorf("[E_APIKEY_MISSING] 未配置 API Key：请点击右上角【设置】填写 API Key 后再重试")
+	}
+
 	var imageField interface{}
 	trimmed := make([]string, 0, len(inputImages))
 	for _, img := range inputImages {
@@ -1556,7 +1597,7 @@ func (a *App) generateImageToLocal(modelID string, prompt string, inputImages []
 
 	resp, err := a.volcService.Client.GenerateImages(context.Background(), req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("图片生成失败：%v（请检查 API Key/网络/模型是否可用）", err)
 	}
 	if len(resp.Data) == 0 || resp.Data[0] == nil || resp.Data[0].Url == nil {
 		return "", fmt.Errorf("image generation returned empty result")
@@ -1564,7 +1605,7 @@ func (a *App) generateImageToLocal(modelID string, prompt string, inputImages []
 
 	local, err := services.DownloadAsset(*resp.Data[0].Url, ".png")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("图片下载失败：%v", err)
 	}
 	return local, nil
 }
@@ -1660,11 +1701,14 @@ func stripMarkdownJSONFence(s string) string {
 func (a *App) requestDecomposeLLM(provider string, apiKey string, baseURL string, modelID string, systemPrompt string, userPrompt string, schema map[string]interface{}) (string, error) {
 	switch provider {
 	case "ark_default":
+		if !a.HasAPIKey() {
+			return "", fmt.Errorf("[E_APIKEY_MISSING] 未配置 API Key：当前选择了“全局 Ark（使用设置里的 API Key）”，请先在右上角【设置】填写 API Key")
+		}
 		return requestWithArkClient(a.volcService.Client, modelID, systemPrompt, userPrompt, schema)
 	case "ark_custom":
 		key := strings.TrimSpace(apiKey)
 		if key == "" {
-			return "", fmt.Errorf("custom ark provider requires api_key")
+			return "", fmt.Errorf("[E_APIKEY_EMPTY] 自定义 Ark 模式需要填写 API Key")
 		}
 		url := strings.TrimSpace(baseURL)
 		if url == "" {
@@ -1679,10 +1723,10 @@ func (a *App) requestDecomposeLLM(provider string, apiKey string, baseURL string
 		key := strings.TrimSpace(apiKey)
 		url := strings.TrimSpace(baseURL)
 		if key == "" {
-			return "", fmt.Errorf("openai compatible provider requires api_key")
+			return "", fmt.Errorf("[E_APIKEY_EMPTY] OpenAI Compatible 模式需要填写 API Key")
 		}
 		if url == "" {
-			return "", fmt.Errorf("openai compatible provider requires base_url")
+			return "", fmt.Errorf("[E_BASEURL_EMPTY] OpenAI Compatible 模式需要填写 Base URL")
 		}
 		return requestWithOpenAICompatible(key, url, modelID, systemPrompt, userPrompt, schema)
 	default:
@@ -1691,6 +1735,9 @@ func (a *App) requestDecomposeLLM(provider string, apiKey string, baseURL string
 }
 
 func requestWithArkClient(client *arkruntime.Client, modelID string, systemPrompt string, userPrompt string, schema map[string]interface{}) (string, error) {
+	if client == nil {
+		return "", fmt.Errorf("LLM 客户端未初始化")
+	}
 	req := model.CreateChatCompletionRequest{
 		Model: modelID,
 		Messages: []*model.ChatCompletionMessage{
@@ -1721,10 +1768,10 @@ func requestWithArkClient(client *arkruntime.Client, modelID string, systemPromp
 
 	resp, err := client.CreateChatCompletion(context.Background(), req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("[E_LLM_REQUEST] LLM 请求失败（Ark, model=%s）：%w", modelID, err)
 	}
 	if len(resp.Choices) == 0 || resp.Choices[0] == nil || resp.Choices[0].Message.Content == nil || resp.Choices[0].Message.Content.StringValue == nil {
-		return "", fmt.Errorf("empty llm response")
+		return "", fmt.Errorf("[E_LLM_EMPTY] LLM 返回为空（Ark, model=%s）", modelID)
 	}
 	return strings.TrimSpace(*resp.Choices[0].Message.Content.StringValue), nil
 }
@@ -1768,38 +1815,52 @@ func requestWithOpenAICompatible(apiKey string, baseURL string, modelID string, 
 	httpClient := &http.Client{Timeout: 120 * time.Second}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("[E_LLM_REQUEST] LLM 请求失败（OpenAI Compatible, model=%s）：%w", modelID, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("读取 LLM 响应失败：%w", err)
 	}
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", fmt.Errorf("invalid openai compatible response: %w", err)
+		return "", fmt.Errorf("解析 OpenAI Compatible 响应失败：%w", err)
 	}
 
 	if resp.StatusCode >= 300 {
 		if errObj, ok := parsed["error"].(map[string]interface{}); ok {
 			if msg, ok := errObj["message"].(string); ok && strings.TrimSpace(msg) != "" {
-				return "", fmt.Errorf("provider error: %s", msg)
+				code := "E_PROVIDER_HTTP"
+				switch resp.StatusCode {
+				case 401, 403:
+					code = "E_HTTP_401"
+				case 429:
+					code = "E_HTTP_429"
+				}
+				return "", fmt.Errorf("[%s] 提供方返回错误（HTTP %d）：%s", code, resp.StatusCode, msg)
 			}
 		}
-		return "", fmt.Errorf("provider error: http %d", resp.StatusCode)
+		code := "E_PROVIDER_HTTP"
+		switch resp.StatusCode {
+		case 401, 403:
+			code = "E_HTTP_401"
+		case 429:
+			code = "E_HTTP_429"
+		}
+		return "", fmt.Errorf("[%s] 提供方返回错误：HTTP %d", code, resp.StatusCode)
 	}
 
 	choices, ok := parsed["choices"].([]interface{})
 	if !ok || len(choices) == 0 {
-		return "", fmt.Errorf("empty llm response")
+		return "", fmt.Errorf("[E_LLM_EMPTY] LLM 返回为空（OpenAI Compatible, model=%s）", modelID)
 	}
 	choice, _ := choices[0].(map[string]interface{})
 	message, _ := choice["message"].(map[string]interface{})
 	contentValue, exists := message["content"]
 	if !exists {
-		return "", fmt.Errorf("empty llm response")
+		return "", fmt.Errorf("[E_LLM_EMPTY] LLM 返回为空（OpenAI Compatible, model=%s）", modelID)
 	}
 
 	if text, ok := contentValue.(string); ok {
@@ -1825,7 +1886,7 @@ func requestWithOpenAICompatible(apiKey string, baseURL string, modelID string, 
 		}
 	}
 
-	return "", fmt.Errorf("empty llm response")
+	return "", fmt.Errorf("[E_LLM_EMPTY] LLM 返回为空（OpenAI Compatible, model=%s）", modelID)
 }
 
 func loadCatalogMap(projectID uint) map[string]models.AssetCatalog {

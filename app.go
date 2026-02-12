@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +24,13 @@ import (
 type App struct {
 	ctx         context.Context
 	volcService *services.VolcEngineService
+}
+
+func (a *App) requireAPIKey() error {
+	if a.HasAPIKey() {
+		return nil
+	}
+	return fmt.Errorf("[E_APIKEY_MISSING] 未配置 API Key：请点击右上角【设置】填写 API Key 后再重试")
 }
 
 // NewApp creates a new App application struct
@@ -56,12 +64,20 @@ func (a *App) GetSavedAPIKey() string {
 }
 
 // UpdateAPIKey saves the API key and updates the service
-func (a *App) UpdateAPIKey(apiKey string) {
-	if apiKey == "" {
-		return
+func (a *App) UpdateAPIKey(apiKey string) error {
+	key := strings.TrimSpace(apiKey)
+	if key == "" {
+		return fmt.Errorf("[E_APIKEY_EMPTY] API Key 不能为空")
 	}
-	models.DB.Where("`key` = ?", "ark_api_key").Assign(models.Setting{Value: apiKey}).FirstOrCreate(&models.Setting{Key: "ark_api_key"})
-	a.volcService.SetAPIKey(apiKey)
+	if a.volcService == nil {
+		return fmt.Errorf("[E_SERVICE_NOT_READY] 服务尚未初始化，请重启应用后再试")
+	}
+
+	if err := models.DB.Where("`key` = ?", "ark_api_key").Assign(models.Setting{Value: key}).FirstOrCreate(&models.Setting{Key: "ark_api_key"}).Error; err != nil {
+		return fmt.Errorf("[E_DB_WRITE] 保存 API Key 失败：%w", err)
+	}
+	a.volcService.SetAPIKey(key)
+	return nil
 }
 
 // HasAPIKey checks if an API key is configured
@@ -132,8 +148,9 @@ type CreateProjectParams struct {
 
 // CreateProject creates a new project with a model version
 func (a *App) CreateProject(params CreateProjectParams) error {
-	if params.Name == "" {
-		return fmt.Errorf("project name is required")
+	name := strings.TrimSpace(params.Name)
+	if name == "" {
+		return fmt.Errorf("项目名称不能为空")
 	}
 	if params.ModelVersion == "" {
 		params.ModelVersion = models.ModelVersionV1
@@ -142,13 +159,16 @@ func (a *App) CreateProject(params CreateProjectParams) error {
 		params.AspectRatio = "16:9"
 	}
 	if !models.IsValidModelVersion(params.ModelVersion) {
-		return fmt.Errorf("invalid model version: %s", params.ModelVersion)
+		return fmt.Errorf("不支持的模型版本：%s", params.ModelVersion)
 	}
-	return models.DB.Create(&models.Project{
-		Name:         params.Name,
+	if err := models.DB.Create(&models.Project{
+		Name:         name,
 		ModelVersion: params.ModelVersion,
 		AspectRatio:  params.AspectRatio,
-	}).Error
+	}).Error; err != nil {
+		return fmt.Errorf("创建项目失败：%w", err)
+	}
+	return nil
 }
 
 // GetModelVersions returns the available model versions for project creation
@@ -161,7 +181,20 @@ func (a *App) GetModelVersions() []map[string]string {
 
 // DeleteProject deletes a project by ID
 func (a *App) DeleteProject(id uint) error {
-	return models.DB.Delete(&models.Project{}, id).Error
+	if id == 0 {
+		return fmt.Errorf("项目 ID 不能为空")
+	}
+	var p models.Project
+	if err := models.DB.First(&p, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("项目不存在")
+		}
+		return fmt.Errorf("查询项目失败：%w", err)
+	}
+	if err := models.DB.Delete(&p).Error; err != nil {
+		return fmt.Errorf("删除项目失败：%w", err)
+	}
+	return nil
 }
 
 // ============================================================
@@ -259,7 +292,10 @@ func (a *App) GetProject(id uint) (*ProjectDetailData, error) {
 	}).First(&project, id).Error
 
 	if err != nil {
-		return nil, fmt.Errorf("project not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("项目不存在")
+		}
+		return nil, fmt.Errorf("加载项目失败：%w", err)
 	}
 
 	var storyboards []StoryboardData
@@ -342,7 +378,12 @@ type CreateStoryboardParams struct {
 
 // CreateStoryboard creates a new storyboard with initial take
 func (a *App) CreateStoryboard(params CreateStoryboardParams) error {
-	os.MkdirAll(config.UploadsDir(), 0755)
+	if params.ProjectID == 0 {
+		return fmt.Errorf("project_id 不能为空")
+	}
+	if err := os.MkdirAll(config.UploadsDir(), 0755); err != nil {
+		return fmt.Errorf("创建上传目录失败：%w", err)
+	}
 
 	if params.ServiceTier == "" {
 		params.ServiceTier = "standard"
@@ -351,22 +392,41 @@ func (a *App) CreateStoryboard(params CreateStoryboardParams) error {
 		params.GenerationMode = "standard"
 	}
 
-	projectRatio := params.Ratio
+	var project models.Project
+	if err := models.DB.First(&project, params.ProjectID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("项目不存在")
+		}
+		return fmt.Errorf("查询项目失败：%w", err)
+	}
+
+	projectRatio := strings.TrimSpace(params.Ratio)
 	if projectRatio == "" {
-		var project models.Project
-		if err := models.DB.First(&project, params.ProjectID).Error; err == nil && project.AspectRatio != "" {
+		if strings.TrimSpace(project.AspectRatio) != "" {
 			projectRatio = project.AspectRatio
 		}
 	}
 	if projectRatio == "" {
 		projectRatio = "16:9"
 	}
-
-	storyboard := models.Storyboard{
-		ProjectID: params.ProjectID,
-		CreatedAt: time.Now(),
+	if strings.TrimSpace(project.AspectRatio) != "" && projectRatio != project.AspectRatio {
+		return fmt.Errorf("项目比例已锁定为 %s，无法使用 %s", project.AspectRatio, projectRatio)
 	}
-	models.DB.Create(&storyboard)
+
+	if params.Duration != 0 && params.Duration != 5 && params.Duration != 10 {
+		return fmt.Errorf("不支持的时长：%d（仅支持 5 或 10 秒）", params.Duration)
+	}
+
+	tx := models.DB.Begin()
+	if tx.Error != nil {
+		return fmt.Errorf("数据库事务启动失败：%w", tx.Error)
+	}
+
+	storyboard := models.Storyboard{ProjectID: params.ProjectID, CreatedAt: time.Now()}
+	if err := tx.Create(&storyboard).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("创建分镜失败：%w", err)
+	}
 
 	take := models.Take{
 		StoryboardID:   storyboard.ID,
@@ -400,17 +460,30 @@ func (a *App) CreateStoryboard(params CreateStoryboardParams) error {
 		take.LastFramePath = params.LastFramePath
 	}
 
-	return models.DB.Create(&take).Error
+	if err := tx.Create(&take).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("创建 Take 失败：%w", err)
+	}
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("保存分镜失败：%w", err)
+	}
+	return nil
 }
 
 // DeleteStoryboard deletes a storyboard and returns its project ID
 func (a *App) DeleteStoryboard(id uint) (uint, error) {
 	var sb models.Storyboard
 	if err := models.DB.First(&sb, id).Error; err != nil {
-		return 0, err
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, fmt.Errorf("分镜不存在")
+		}
+		return 0, fmt.Errorf("查询分镜失败：%w", err)
 	}
 	projectID := sb.ProjectID
-	return projectID, models.DB.Delete(&sb).Error
+	if err := models.DB.Delete(&sb).Error; err != nil {
+		return projectID, fmt.Errorf("删除分镜失败：%w", err)
+	}
+	return projectID, nil
 }
 
 // UpdateStoryboardParams holds parameters for updating a storyboard
@@ -433,13 +506,21 @@ type UpdateStoryboardParams struct {
 
 // UpdateStoryboard creates a new take version for the storyboard
 func (a *App) UpdateStoryboard(params UpdateStoryboardParams) error {
-	os.MkdirAll(config.UploadsDir(), 0755)
+	if params.StoryboardID == 0 {
+		return fmt.Errorf("storyboard_id 不能为空")
+	}
+	if err := os.MkdirAll(config.UploadsDir(), 0755); err != nil {
+		return fmt.Errorf("创建上传目录失败：%w", err)
+	}
 
 	var sb models.Storyboard
 	if err := models.DB.Preload("Takes", func(db *gorm.DB) *gorm.DB {
 		return db.Order("created_at asc")
 	}).First(&sb, params.StoryboardID).Error; err != nil {
-		return fmt.Errorf("storyboard not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("分镜不存在")
+		}
+		return fmt.Errorf("加载分镜失败：%w", err)
 	}
 
 	var prevTake models.Take
@@ -513,7 +594,10 @@ func (a *App) UpdateStoryboard(params UpdateStoryboardParams) error {
 		newTake.LastFramePath = params.LastFramePath
 	}
 
-	return models.DB.Create(&newTake).Error
+	if err := models.DB.Create(&newTake).Error; err != nil {
+		return fmt.Errorf("保存 Take 失败：%w", err)
+	}
+	return nil
 }
 
 // ============================================================
@@ -522,6 +606,10 @@ func (a *App) UpdateStoryboard(params UpdateStoryboardParams) error {
 
 // GenerateTakeVideo starts video generation for a take
 func (a *App) GenerateTakeVideo(id uint) (map[string]interface{}, error) {
+	if err := a.requireAPIKey(); err != nil {
+		return nil, err
+	}
+
 	var take models.Take
 	if err := models.DB.First(&take, id).Error; err != nil {
 		return nil, fmt.Errorf("take not found")
@@ -555,14 +643,14 @@ func (a *App) GenerateTakeVideo(id uint) (map[string]interface{}, error) {
 	if take.FirstFramePath != "" {
 		b64, err := imageToBase64(take.FirstFramePath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to process first frame: %w", err)
+			return nil, fmt.Errorf("处理首帧失败：%w", err)
 		}
 		firstFrameURL = b64
 	}
 	if take.LastFramePath != "" {
 		b64, err := imageToBase64(take.LastFramePath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to process last frame: %w", err)
+			return nil, fmt.Errorf("处理尾帧失败：%w", err)
 		}
 		lastFrameURL = b64
 	}
@@ -570,6 +658,13 @@ func (a *App) GenerateTakeVideo(id uint) (map[string]interface{}, error) {
 	finalPrompt := take.Prompt
 	if storyboard.ID > 0 {
 		finalPrompt = composeTakePromptWithAssetRefs(storyboard, take.Prompt)
+	}
+
+	if strings.TrimSpace(take.ModelID) == "" {
+		return nil, fmt.Errorf("缺少模型 ID：请先在右侧“生成参数”里选择目标模型")
+	}
+	if strings.TrimSpace(finalPrompt) == "" {
+		return nil, fmt.Errorf("提示词为空：请先填写视频提示词")
 	}
 
 	taskID, err := a.volcService.CreateVideoTask(
@@ -580,7 +675,7 @@ func (a *App) GenerateTakeVideo(id uint) (map[string]interface{}, error) {
 	if err != nil {
 		take.Status = "Failed"
 		models.DB.Save(&take)
-		return nil, err
+		return nil, fmt.Errorf("提交生成任务失败：%v（请检查 API Key/网络/模型是否可用）", err)
 	}
 
 	take.TaskID = taskID
@@ -606,7 +701,10 @@ type TakeStatusResult struct {
 func (a *App) GetTakeStatus(id uint) (*TakeStatusResult, error) {
 	var take models.Take
 	if err := models.DB.First(&take, id).Error; err != nil {
-		return nil, fmt.Errorf("take not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("Take 不存在")
+		}
+		return nil, fmt.Errorf("加载 Take 失败：%w", err)
 	}
 
 	if take.TaskID == "" {
@@ -677,7 +775,10 @@ func (a *App) GetTakeStatus(id uint) (*TakeStatusResult, error) {
 func (a *App) GetTake(id uint) (*TakeResponse, error) {
 	var take models.Take
 	if err := models.DB.First(&take, id).Error; err != nil {
-		return nil, fmt.Errorf("take not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("Take 不存在")
+		}
+		return nil, fmt.Errorf("加载 Take 失败：%w", err)
 	}
 	resp := takeToResponse(&take)
 	return &resp, nil
@@ -687,7 +788,7 @@ func (a *App) GetTake(id uint) (*TakeResponse, error) {
 func (a *App) ListTakes(storyboardID uint) ([]TakeResponse, error) {
 	var takes []models.Take
 	if err := models.DB.Where("storyboard_id = ?", storyboardID).Order("created_at asc").Find(&takes).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("加载 Take 列表失败：%w", err)
 	}
 	var result []TakeResponse
 	for i := range takes {
@@ -700,15 +801,22 @@ func (a *App) ListTakes(storyboardID uint) ([]TakeResponse, error) {
 func (a *App) ToggleGoodTake(id uint) (bool, error) {
 	var take models.Take
 	if err := models.DB.First(&take, id).Error; err != nil {
-		return false, fmt.Errorf("take not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, fmt.Errorf("Take 不存在")
+		}
+		return false, fmt.Errorf("加载 Take 失败：%w", err)
 	}
 
 	newState := !take.IsGood
 	if newState {
-		models.DB.Model(&models.Take{}).Where("storyboard_id = ? AND id != ?", take.StoryboardID, take.ID).Update("is_good", false)
+		if err := models.DB.Model(&models.Take{}).Where("storyboard_id = ? AND id != ?", take.StoryboardID, take.ID).Update("is_good", false).Error; err != nil {
+			return false, fmt.Errorf("更新 Good Take 失败：%w", err)
+		}
 	}
 	take.IsGood = newState
-	models.DB.Save(&take)
+	if err := models.DB.Save(&take).Error; err != nil {
+		return false, fmt.Errorf("保存 Take 失败：%w", err)
+	}
 
 	return take.IsGood, nil
 }
@@ -724,12 +832,15 @@ type DeleteTakeResult struct {
 func (a *App) DeleteTake(id uint) (*DeleteTakeResult, error) {
 	var take models.Take
 	if err := models.DB.First(&take, id).Error; err != nil {
-		return nil, fmt.Errorf("take not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("Take 不存在")
+		}
+		return nil, fmt.Errorf("加载 Take 失败：%w", err)
 	}
 	storyboardID := take.StoryboardID
 
 	if err := models.DB.Delete(&take).Error; err != nil {
-		return nil, fmt.Errorf("failed to delete take")
+		return nil, fmt.Errorf("删除 Take 失败：%w", err)
 	}
 
 	var count int64
@@ -757,12 +868,15 @@ func (a *App) DeleteTake(id uint) (*DeleteTakeResult, error) {
 func (a *App) ExportProject(id uint) error {
 	var project models.Project
 	if err := models.DB.Preload("Storyboards.Takes").First(&project, id).Error; err != nil {
-		return fmt.Errorf("project not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("项目不存在")
+		}
+		return fmt.Errorf("加载项目失败：%w", err)
 	}
 
 	exports := services.PrepareExportData(project.Storyboards)
 	if len(exports) == 0 {
-		return fmt.Errorf("no succeeded videos available for export")
+		return fmt.Errorf("没有可导出的已成功视频（请先生成至少一个成功的 Take）")
 	}
 
 	filename := services.GetExportFilename(project.Name)
@@ -774,7 +888,7 @@ func (a *App) ExportProject(id uint) error {
 		},
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("打开保存对话框失败：%w", err)
 	}
 	if savePath == "" {
 		return nil // User cancelled
@@ -782,11 +896,14 @@ func (a *App) ExportProject(id uint) error {
 
 	file, err := os.Create(savePath)
 	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
+		return fmt.Errorf("创建导出文件失败：%w", err)
 	}
 	defer file.Close()
 
-	return services.CreateExportZIP(file, project.Name, exports)
+	if err := services.CreateExportZIP(file, project.Name, exports); err != nil {
+		return fmt.Errorf("导出失败：%w", err)
+	}
+	return nil
 }
 
 // ============================================================
@@ -796,13 +913,13 @@ func (a *App) ExportProject(id uint) error {
 // SelectImageFile opens a native file dialog to select an image
 func (a *App) SelectImageFile() (string, error) {
 	result, err := wailsRuntime.OpenFileDialog(a.ctx, wailsRuntime.OpenDialogOptions{
-		Title: "Select Image",
+		Title: "选择图片",
 		Filters: []wailsRuntime.FileFilter{
 			{DisplayName: "Images (*.png, *.jpg, *.jpeg, *.gif, *.webp)", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.webp"},
 		},
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("打开文件选择框失败：%w", err)
 	}
 	if result == "" {
 		return "", nil
@@ -814,18 +931,18 @@ func (a *App) SelectImageFile() (string, error) {
 
 	srcFile, err := os.Open(result)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("读取源文件失败：%w", err)
 	}
 	defer srcFile.Close()
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("创建目标文件失败：%w", err)
 	}
 	defer dstFile.Close()
 
 	if _, err := io.Copy(dstFile, srcFile); err != nil {
-		return "", err
+		return "", fmt.Errorf("复制文件失败：%w", err)
 	}
 
 	// Return relative path for DB storage
@@ -843,7 +960,7 @@ func (a *App) CopyToUploads(srcPath string) (string, error) {
 	srcPath = config.ToAbsolutePath(srcPath)
 
 	if _, err := os.Stat(srcPath); err != nil {
-		return "", fmt.Errorf("source file not found: %w", err)
+		return "", fmt.Errorf("源文件不存在：%w", err)
 	}
 
 	ext := filepath.Ext(srcPath)
@@ -855,18 +972,18 @@ func (a *App) CopyToUploads(srcPath string) (string, error) {
 
 	srcFile, err := os.Open(srcPath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("读取源文件失败：%w", err)
 	}
 	defer srcFile.Close()
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("创建目标文件失败：%w", err)
 	}
 	defer dstFile.Close()
 
 	if _, err := io.Copy(dstFile, srcFile); err != nil {
-		return "", err
+		return "", fmt.Errorf("复制文件失败：%w", err)
 	}
 
 	// Return relative path for DB storage
@@ -882,13 +999,13 @@ func imageToBase64(path string) (string, error) {
 	absPath := config.ToAbsolutePath(path)
 	file, err := os.Open(absPath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("打开图片失败：%w", err)
 	}
 	defer file.Close()
 
 	bytes, err := io.ReadAll(file)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("读取图片失败：%w", err)
 	}
 
 	mimeType := "image/png"

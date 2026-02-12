@@ -1,5 +1,6 @@
 import './style.css';
 import { applyLanguage, getLanguage, setLanguage } from './i18n.js';
+import { formatError, reportError } from './errors.js';
 import { renderProjectsPage } from './projects.js';
 import { renderStoryboardPage } from './storyboard.js';
 import { renderStoryboardV2Page } from './storyboard_v2.js';
@@ -32,7 +33,7 @@ async function navigate() {
                 await renderStoryboardPage(container, route.id);
             }
         } catch (err) {
-            container.innerHTML = `<div class="alert alert-error mt-4">Failed to load project: ${err}</div>`;
+            container.innerHTML = `<div class="alert alert-error mt-4">加载项目失败：${formatError(err)}</div>`;
         }
     } else {
         await renderProjectsPage(container);
@@ -124,17 +125,19 @@ function renderShell() {
     });
 
     document.getElementById('save-apikey-btn').addEventListener('click', async () => {
-        const apiKey = document.getElementById('apikey-input').value;
-        if (apiKey) {
-            try {
-                await window.go.main.App.UpdateAPIKey(apiKey);
-            } catch (err) {
-                alert('Failed to update API key: ' + err);
-                return;
-            }
-            document.getElementById('settings-dialog').close();
-            document.getElementById('apikey-input').value = '';
+        const apiKey = (document.getElementById('apikey-input').value || '').trim();
+        if (!apiKey) {
+            alert('请先填写 API Key');
+            return;
         }
+        try {
+            await window.go.main.App.UpdateAPIKey(apiKey);
+        } catch (err) {
+            reportError('更新 API Key 失败', err, { openSettingsOnAPIKey: false });
+            return;
+        }
+        document.getElementById('settings-dialog').close();
+        document.getElementById('apikey-input').value = '';
     });
 }
 
