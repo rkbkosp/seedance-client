@@ -509,30 +509,91 @@ function renderWorkbenchPanel() {
     return `
         <div class="workbench-shell">
             <aside class="wb-left card-cinema">
-                <div class="card-head">
-                    分镜列表 / Take 切换
-                    <button class="mini-btn" data-create-new-shot style="float:right;font-size:11px;">+ 新建</button>
-                </div>
-                <div class="card-body wb-scroll">
-                    ${(shots || []).map((shot, idx) => renderWorkbenchShotItem(shot, idx)).join('')}
+                <div class="card-head">1. 资源/列表</div>
+                <div class="card-body wb-left-body wb-scroll">
+                    ${renderWorkbenchCharacterLibrary(ws)}
+                    ${renderWorkbenchStoryboardTextList(shots)}
                 </div>
             </aside>
 
             <section class="wb-center card-cinema">
-                <div class="card-head">舞台与预览</div>
+                <div class="card-head">2. 监视器</div>
                 <div class="card-body">
                     ${renderStagePreview(selectedShot, selectedTake)}
                 </div>
             </section>
 
             <aside class="wb-right card-cinema">
-                <div class="card-head">生成参数（保存为新 Take）</div>
+                <div class="card-head">3. 参数</div>
                 <div class="card-body">
                     ${renderTakeInspector(selectedShot, selectedTake)}
                 </div>
             </aside>
         </div>
         ${renderTimeline(shots)}
+    `;
+}
+
+function renderWorkbenchCharacterLibrary(ws) {
+    const catalogs = ws.asset_catalogs || [];
+    const chars = catalogs.filter(c => c.asset_type === 'character');
+    const items = chars.slice(0, 12).map(c => {
+        const p = c.active?.image_path || '';
+        const src = p ? `/${String(p).replace(/^\//, '')}` : '';
+        return `
+            <div class="wb-resource-item" title="${escapeHtml(c.name || c.asset_code || '')}">
+                ${src ? `<img src="${src}" alt="${escapeHtml(c.name || c.asset_code || '')}">` : '<div class="wb-resource-ph">角色</div>'}
+                <span>${escapeHtml(c.name || c.asset_code || '')}</span>
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <section class="wb-section">
+            <div class="wb-section-title">角色库</div>
+            <div class="wb-resource-list">
+                ${items || '<div class="hint-text">暂无角色素材</div>'}
+            </div>
+        </section>
+    `;
+}
+
+function renderWorkbenchStoryboardTextList(shots) {
+    const rows = (shots || []).map((shot, idx) => renderWorkbenchShotTextRow(shot, idx)).join('');
+    return `
+        <section class="wb-section">
+            <div class="wb-section-title">
+                文字分镜表
+                <button class="mini-btn" data-create-new-shot style="float:right;font-size:11px;">+ 新建</button>
+            </div>
+            <div class="wb-story-list">
+                ${rows}
+            </div>
+        </section>
+    `;
+}
+
+function renderWorkbenchShotTextRow(shot, idx) {
+    const selected = shot.id === state.selectedShotId ? 'selected' : '';
+    const activeTakeId = state.selectedTakeByShot[shot.id] || shot.active_take?.id;
+    const takeTabs = (shot.takes || []).map((take, index) => {
+        const st = (take.status || '').toLowerCase();
+        const running = st === 'running' || st === 'queued';
+        const label = running ? `T${index + 1}…` : `T${index + 1}`;
+        return `
+            <button class="take-pill ${activeTakeId === take.id ? 'active' : ''}" data-select-take="${take.id}" data-shot-id="${shot.id}">
+                ${label}${take.is_good ? '★' : ''}
+            </button>
+        `;
+    }).join('');
+
+    const no = shot.shot_no || `Shot ${idx + 1}`;
+    const desc = (shot.frame_content || '').replace(/\s+/g, ' ').slice(0, 42);
+    return `
+        <div class="wb-story-row ${selected}" data-select-shot="${shot.id}">
+            <div class="wb-story-line"><strong>${escapeHtml(no)}</strong><span>${escapeHtml(desc)}</span></div>
+            <div class="take-pill-row">${takeTabs || '<span class="hint-text">暂无 Take</span>'}</div>
+        </div>
     `;
 }
 
@@ -594,10 +655,15 @@ function renderStagePreview(shot, take) {
 
     return `
         <div class="stage-main">${monitor}</div>
-        <div class="stage-side-frames">
-            ${renderSmallFrame(prevTail, '上一镜尾帧')}
-            ${renderSmallFrame(curStart, '本镜首帧')}
-            ${renderSmallFrame(curEnd, '本镜尾帧')}
+        <div class="stage-compare">
+            <div class="compare-col">
+                <div class="compare-title">上一镜</div>
+                ${renderSmallFrame(prevTail, '上一镜尾帧')}
+            </div>
+            <div class="compare-col">
+                <div class="compare-title">当前镜</div>
+                ${renderSmallFrame(curStart || curEnd, '当前镜首帧')}
+            </div>
         </div>
         <div class="stage-version-bar">
             <span>Take #${findTakeIndex(shot, take.id)}</span>
@@ -687,18 +753,35 @@ function renderTimeline(shots) {
         const duration = Number(take?.duration || shot.estimated_duration || 5);
         const width = Math.max(90, duration * 28);
         const chained = take?.chain_from_prev && idx > 0;
+
+		const st = (take?.status || '').toLowerCase();
+		const running = st === 'running' || st === 'queued';
+		const failed = st === 'failed';
+		const statusText = running ? '正在生成...' : failed ? '生成失败' : '';
+
+		const thumbPath = shot.active_end_frame?.image_path
+			|| take?.local_last_frame_path
+			|| take?.last_frame_path
+			|| take?.last_frame_url
+			|| '';
+		const thumbSrc = thumbPath
+			? (String(thumbPath).startsWith('http') ? thumbPath : `/${String(thumbPath).replace(/^\//, '')}`)
+			: '';
         return `
             <div class="timeline-clip" style="width:${width}px" data-select-shot="${shot.id}">
                 ${chained ? '<span class="chain-flag">🔗</span>' : ''}
-                <strong>${escapeHtml(shot.shot_no || `S${idx + 1}`)}</strong>
-                <span>${duration}s</span>
+                ${thumbSrc ? `<img class="timeline-thumb" src="${thumbSrc}" alt="thumb">` : '<div class="timeline-thumb placeholder"></div>'}
+                <div class="timeline-meta">
+                    <strong>${escapeHtml(shot.shot_no || `S${idx + 1}`)}</strong>
+                    <span>${duration}s${statusText ? ' · ' + statusText : ''}</span>
+                </div>
             </div>
         `;
     }).join('');
 
     return `
         <div class="timeline-shell card-cinema">
-            <div class="card-head">时间线</div>
+            <div class="card-head">4. 时间线</div>
             <div class="card-body">
                 <div class="timeline-track">${clips}</div>
                 <div class="timeline-export-wrap">
