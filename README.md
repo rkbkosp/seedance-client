@@ -22,7 +22,7 @@
 ## 技术栈
 
 - **后端**：Go + GORM + [Wails v2](https://wails.io/)
-- **前端**：Vanilla JS + Vite + TailwindCSS + DaisyUI
+- **前端**：Vue 3 (Composition API) + Vite + Pinia + Vue Router + TailwindCSS + Naive UI
 - **数据库**：SQLite
 - **模型调用**：Volcengine Ark Runtime SDK + OpenAI-compatible HTTP 接口（用于分镜拆解）
 
@@ -144,9 +144,14 @@ seedance-client/
 │   ├── index.html
 │   ├── package.json
 │   └── src/
-│       ├── main.js             # 应用壳 + 路由
-│       ├── projects.js         # 项目页
-│       ├── storyboard.js       # 1.x 三面板 UI
+│       ├── main.js             # Vue 应用入口
+│       ├── App.vue             # 根组件
+│       ├── router/             # 前端路由
+│       ├── stores/             # Pinia 状态管理
+│       ├── views/              # 页面视图（项目页 / 工作台）
+│       ├── layouts/            # 三栏工作台布局
+│       ├── components/         # ShotCard/Monitor/Timeline 等组件
+│       ├── storyboard.js       # 旧版 1.x 三面板（迁移期保留）
 │       ├── storyboard_v2.js    # v2.0 占位页
 │       ├── i18n.js
 │       └── style.css

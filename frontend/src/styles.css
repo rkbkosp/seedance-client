@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #app {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-zinc-950 text-zinc-100 antialiased;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+  }
+
+  * {
+    min-width: 0;
+  }
+}
+
+@layer utilities {
+  .panel-surface {
+    @apply bg-zinc-900 border border-zinc-800 rounded-md;
+  }
+
+  .panel-title {
+    @apply text-xs uppercase tracking-wide text-zinc-400;
+  }
+
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}

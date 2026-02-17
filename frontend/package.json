@@ -7,7 +7,14 @@
     "dev": "vite",
     "build": "vite build"
   },
+  "dependencies": {
+    "naive-ui": "^2.43.1",
+    "pinia": "^2.3.1",
+    "vue": "^3.5.22",
+    "vue-router": "^4.5.1"
+  },
   "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
     "autoprefixer": "^10.4.24",
     "daisyui": "^4.12.24",
     "postcss": "^8.5.6",
